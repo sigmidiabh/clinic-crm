@@ -37,7 +37,6 @@ export default function App() {
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(true);
 
-  // Carregar contactos do Supabase
   const fetchContacts = async () => {
     const { data, error } = await supabase
       .from('contacts')
@@ -54,7 +53,6 @@ export default function App() {
     setLoading(false);
   };
 
-  // Carregar mensagens do contacto selecionado
   const fetchMessages = async (contactId: string) => {
     const { data, error } = await supabase
       .from('messages')
@@ -70,7 +68,6 @@ export default function App() {
   useEffect(() => {
     fetchContacts();
 
-    // Sincronização em tempo real (Supabase Realtime)
     const channel = supabase
       .channel('schema-db-changes')
       .on(
@@ -122,7 +119,6 @@ export default function App() {
     const textToSend = inputText;
     setInputText('');
 
-    // Salvar mensagem como agente no Supabase
     await supabase.from('messages').insert({
       contact_id: currentContact.id,
       phone: currentContact.phone,
@@ -130,7 +126,6 @@ export default function App() {
       text: textToSend,
     });
 
-    // Atualizar último registo no contacto mudando o status para 'in_progress'
     await supabase.from('contacts').update({
       last_message: textToSend,
       status: 'in_progress',
@@ -200,25 +195,19 @@ export default function App() {
             <div className="flex gap-1">
               <button 
                 onClick={() => setFilter('waiting')} 
-                className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition ${
-                  filter === 'waiting' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
+                className={filter === 'waiting' ? 'px-2.5 py-1 rounded-md text-[11px] font-semibold transition bg-emerald-600 text-white' : 'px-2.5 py-1 rounded-md text-[11px] font-semibold transition bg-slate-100 text-slate-600 hover:bg-slate-200'}
               >
                 Atendimento Poliana ({contacts.filter(c => c.status === 'waiting_agent' || c.status === 'in_progress').length})
               </button>
               <button 
                 onClick={() => setFilter('ai')} 
-                className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition ${
-                  filter === 'ai' ? 'bg-purple-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
+                className={filter === 'ai' ? 'px-2.5 py-1 rounded-md text-[11px] font-medium transition bg-purple-600 text-white' : 'px-2.5 py-1 rounded-md text-[11px] font-medium transition bg-slate-100 text-slate-600 hover:bg-slate-200'}
               >
                 Com Marina ({contacts.filter(c => c.status === 'with_ai').length})
               </button>
               <button 
                 onClick={() => setFilter('all')} 
-                className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition ${
-                  filter === 'all' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
+                className={filter === 'all' ? 'px-2.5 py-1 rounded-md text-[11px] font-medium transition bg-slate-800 text-white' : 'px-2.5 py-1 rounded-md text-[11px] font-medium transition bg-slate-100 text-slate-600 hover:bg-slate-200'}
               >
                 Todos
               </button>
@@ -237,4 +226,81 @@ export default function App() {
                 <div 
                   key={contact.id}
                   onClick={() => setSelectedId(contact.id)}
-                  className={`p-3.5 cursor-pointer transition
+                  className={selectedId === contact.id ? 'p-3.5 cursor-pointer transition bg-emerald-50/60 border-l-4 border-emerald-600' : 'p-3.5 cursor-pointer transition hover:bg-slate-50'}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-bold text-slate-900">{contact.name}</span>
+                    <span className="text-[10px] text-slate-400">{contact.phone}</span>
+                  </div>
+                  <p className="text-xs text-slate-500 truncate mb-2">{contact.last_message || 'Sem mensagens'}</p>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                      {contact.tag}
+                    </span>
+                    
+                    {contact.status === 'waiting_agent' && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-200">
+                        Aguardando Poliana
+                      </span>
+                    )}
+                    {contact.status === 'in_progress' && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                        Atendimento Poliana
+                      </span>
+                    )}
+                    {contact.status === 'with_ai' && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-700 border border-purple-200 flex items-center gap-1">
+                        <Bot className="w-3 h-3" /> Marina Ativa
+                      </span>
+                    )}
+                    {contact.status === 'scheduled' && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-800 border border-blue-200">
+                        Agendado
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </aside>
+
+        {/* COLUNA 2: ÁREA DE CHAT */}
+        <section className="flex-1 bg-[#f0f2f5] flex flex-col border-r border-slate-200 relative">
+          {currentContact ? (
+            <>
+              {/* BARRA SUPERIOR DO CHAT */}
+              <div className="bg-white px-5 py-3 border-b border-slate-200 flex items-center justify-between shadow-sm">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-bold text-slate-900">{currentContact.name}</h2>
+                    <span className="text-xs text-slate-400">{currentContact.phone}</span>
+                  </div>
+                  <div className="text-[11px] font-medium mt-0.5">
+                    {currentContact.status === 'waiting_agent' && (
+                      <span className="text-amber-700 flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-amber-500"></span> Handoff Concluído • Aguardando Primeira Resposta
+                      </span>
+                    )}
+                    {currentContact.status === 'in_progress' && (
+                      <span className="text-emerald-700 flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Em Atendimento • Poliana Conectada
+                      </span>
+                    )}
+                    {currentContact.status === 'with_ai' && (
+                      <span className="text-purple-700 flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-purple-500"></span> Marina IA a responder automaticamente
+                      </span>
+                    )}
+                    {currentContact.status === 'scheduled' && (
+                      <span className="text-blue-700 flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-blue-500"></span> Paciente Agendado no Sistema
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={toggleAiStatus}
+                    className={currentContact.status === 'with_ai' ? 'px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300' : 'px-3 py-1.5 rounded-lg text-xs font-semibold
