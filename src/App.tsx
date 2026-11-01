@@ -31,7 +31,7 @@ export default function App() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [selectedId, setSelectedId] = useState<string>('');
   const [messages, setMessages] = useState<Message[]>([]);
-  const [filter, setFilter] = useState<'all' | 'waiting' | 'ai'>('all');
+  const [filter, setFilter] = useState<'all' | 'waiting' | 'in_progress' | 'ai'>('all');
   const [search, setSearch] = useState('');
   const [inputText, setInputText] = useState('');
   const [notes, setNotes] = useState('');
@@ -108,7 +108,8 @@ export default function App() {
       contact.phone?.includes(search) ||
       contact.tag?.toLowerCase().includes(search.toLowerCase());
     if (!matchesSearch) return false;
-    if (filter === 'waiting') return contact.status === 'waiting_agent' || contact.status === 'in_progress';
+    if (filter === 'waiting') return contact.status === 'waiting_agent';
+    if (filter === 'in_progress') return contact.status === 'in_progress';
     if (filter === 'ai') return contact.status === 'with_ai';
     return true;
   });
@@ -192,22 +193,29 @@ export default function App() {
               />
             </div>
             
-            <div className="flex gap-1">
+            {/* BOTÕES DE FILTRO SEPARADOS */}
+            <div className="flex gap-1 overflow-x-auto pb-0.5">
               <button 
                 onClick={() => setFilter('waiting')} 
-                className={filter === 'waiting' ? 'px-2.5 py-1 rounded-md text-[11px] font-semibold transition bg-emerald-600 text-white' : 'px-2.5 py-1 rounded-md text-[11px] font-semibold transition bg-slate-100 text-slate-600 hover:bg-slate-200'}
+                className={filter === 'waiting' ? 'px-2 py-1 rounded-md text-[10px] font-semibold whitespace-nowrap transition bg-amber-600 text-white' : 'px-2 py-1 rounded-md text-[10px] font-semibold whitespace-nowrap transition bg-slate-100 text-slate-600 hover:bg-slate-200'}
               >
-                Atendimento Poliana ({contacts.filter(c => c.status === 'waiting_agent' || c.status === 'in_progress').length})
+                Aguardando ({contacts.filter(c => c.status === 'waiting_agent').length})
+              </button>
+              <button 
+                onClick={() => setFilter('in_progress')} 
+                className={filter === 'in_progress' ? 'px-2 py-1 rounded-md text-[10px] font-semibold whitespace-nowrap transition bg-emerald-600 text-white' : 'px-2 py-1 rounded-md text-[10px] font-semibold whitespace-nowrap transition bg-slate-100 text-slate-600 hover:bg-slate-200'}
+              >
+                Atendimento ({contacts.filter(c => c.status === 'in_progress').length})
               </button>
               <button 
                 onClick={() => setFilter('ai')} 
-                className={filter === 'ai' ? 'px-2.5 py-1 rounded-md text-[11px] font-medium transition bg-purple-600 text-white' : 'px-2.5 py-1 rounded-md text-[11px] font-medium transition bg-slate-100 text-slate-600 hover:bg-slate-200'}
+                className={filter === 'ai' ? 'px-2 py-1 rounded-md text-[10px] font-medium whitespace-nowrap transition bg-purple-600 text-white' : 'px-2 py-1 rounded-md text-[10px] font-medium whitespace-nowrap transition bg-slate-100 text-slate-600 hover:bg-slate-200'}
               >
-                Com Marina ({contacts.filter(c => c.status === 'with_ai').length})
+                Marina ({contacts.filter(c => c.status === 'with_ai').length})
               </button>
               <button 
                 onClick={() => setFilter('all')} 
-                className={filter === 'all' ? 'px-2.5 py-1 rounded-md text-[11px] font-medium transition bg-slate-800 text-white' : 'px-2.5 py-1 rounded-md text-[11px] font-medium transition bg-slate-100 text-slate-600 hover:bg-slate-200'}
+                className={filter === 'all' ? 'px-2 py-1 rounded-md text-[10px] font-medium whitespace-nowrap transition bg-slate-800 text-white' : 'px-2 py-1 rounded-md text-[10px] font-medium whitespace-nowrap transition bg-slate-100 text-slate-600 hover:bg-slate-200'}
               >
                 Todos
               </button>
