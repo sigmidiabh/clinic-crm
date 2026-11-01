@@ -303,4 +303,169 @@ export default function App() {
                 <div className="flex items-center gap-2">
                   <button 
                     onClick={toggleAiStatus}
-                    className={currentContact.status === 'with_ai' ? 'px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300' : 'px-3 py-1.5 rounded-lg text-xs font-semibold
+                    className={currentContact.status === 'with_ai' ? 'px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300' : 'px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition bg-purple-100 text-purple-800 hover:bg-purple-200 border border-purple-300'}
+                  >
+                    <Bot className="w-3.5 h-3.5" />
+                    {currentContact.status === 'with_ai' ? 'Pausar IA / Assumir' : 'Reativar Marina IA'}
+                  </button>
+                  
+                  <button 
+                    onClick={markAsScheduled}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition"
+                  >
+                    <CalendarCheck className="w-3.5 h-3.5" /> Marcar Agendado
+                  </button>
+                </div>
+              </div>
+
+              {/* HISTÓRICO DE MENSAGENS */}
+              <div className="flex-1 p-5 overflow-y-auto space-y-3.5">
+                {messages.map(msg => (
+                  <div 
+                    key={msg.id} 
+                    className={msg.sender === 'patient' ? 'flex justify-start' : 'flex justify-end'}
+                  >
+                    <div className={
+                      msg.sender === 'patient' 
+                        ? 'max-w-md p-3 rounded-2xl text-xs leading-relaxed shadow-sm bg-white text-slate-800 rounded-tl-none border border-slate-100' 
+                        : msg.sender === 'bot'
+                        ? 'max-w-md p-3 rounded-2xl text-xs leading-relaxed shadow-sm bg-purple-50 border border-purple-200 text-slate-800 rounded-tr-none'
+                        : 'max-w-md p-3 rounded-2xl text-xs leading-relaxed shadow-sm bg-emerald-600 text-white rounded-tr-none'
+                    }>
+                      {msg.sender === 'bot' && (
+                        <div className="flex items-center gap-1 text-[10px] font-bold text-purple-700 uppercase tracking-wider mb-1">
+                          <Sparkles className="w-3 h-3" /> Marina (IA)
+                        </div>
+                      )}
+                      {msg.sender === 'agent' && (
+                        <div className="text-[10px] font-semibold text-emerald-200 uppercase tracking-wider mb-1">
+                          Poliana (Secretária)
+                        </div>
+                      )}
+                      <p>{msg.text}</p>
+                      <span className={msg.sender === 'agent' ? 'block text-[10px] text-right mt-1 text-emerald-100' : 'block text-[10px] text-right mt-1 text-slate-400'}>
+                        {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* RESPOSTAS RÁPIDAS PADRONIZADAS */}
+              <div className="bg-slate-50 border-t border-slate-200 px-4 py-2 flex items-center gap-2 overflow-x-auto shrink-0">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider shrink-0">Atalhos:</span>
+                <button 
+                  onClick={() => setInputText('Olá! Para adiantarmos com o Dr. Cristiano, qual o nome exato da medicação e a dosagem que você precisa renovar?')}
+                  className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-full text-[11px] text-slate-700 whitespace-nowrap transition"
+                >
+                  💊 Dados da Receita
+                </button>
+                <button 
+                  onClick={() => setInputText('Para a consulta presencial na Savassi, temos horários abertos para quinta-feira às 14h ou sexta às 10h. Algum desses atende você?')}
+                  className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-full text-[11px] text-slate-700 whitespace-nowrap transition"
+                >
+                  📅 Horários Savassi
+                </button>
+                <button 
+                  onClick={() => setInputText('O atendimento do Dr. Cristiano é estritamente particular. Emitimos o recibo detalhado para você solicitar o reembolso junto ao convênio.')}
+                  className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-full text-[11px] text-slate-700 whitespace-nowrap transition"
+                >
+                  📄 Regra de Reembolso
+                </button>
+              </div>
+
+              {/* INPUT DE MENSAGEM */}
+              <div className="bg-white p-3 border-t border-slate-200 flex items-center gap-2 shrink-0">
+                <input 
+                  type="text" 
+                  value={inputText}
+                  onChange={e => setInputText(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleSendMessage()}
+                  placeholder="Digite a mensagem como Poliana..." 
+                  className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-emerald-600 transition"
+                />
+                <button 
+                  onClick={handleSendMessage}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white w-9 h-9 rounded-xl flex items-center justify-center transition shrink-0"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-xs text-slate-400">
+              Selecione um contacto para abrir o atendimento.
+            </div>
+          )}
+        </section>
+
+        {/* COLUNA 3: DOSSIÊ DE TRIAGEM (GEMINI) */}
+        {currentContact && (
+          <aside className="w-80 bg-white border-l border-slate-200 flex flex-col shrink-0 overflow-y-auto">
+            <div className="p-4 border-b border-slate-100 bg-slate-50/60">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-purple-600" /> Resumo do Gemini
+              </h3>
+              <p className="text-[11px] text-slate-400">Dados consolidados da triagem</p>
+            </div>
+
+            <div className="p-4 space-y-4 text-xs">
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Motivo do Contato</label>
+                <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-100 font-medium text-slate-800">
+                  {currentContact.triage_intent || 'Não informado'}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Modalidade Pretendida</label>
+                <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-100 font-medium text-slate-800">
+                  {currentContact.triage_modality || 'A definir'}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Queixa / Observação</label>
+                <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-100 text-slate-600 leading-relaxed">
+                  {currentContact.triage_complaint || 'Sem queixa registrada'}
+                </div>
+              </div>
+
+              {currentContact.reimbursement_notice && (
+                <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-lg text-blue-800 text-[11px] flex gap-2">
+                  <AlertCircle className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                  <span>Paciente informado sobre o recibo para reembolso particular.</span>
+                </div>
+              )}
+
+              <div className="border-t border-slate-100 pt-3">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Anotações Internas (Poliana)</label>
+                <textarea 
+                  value={notes}
+                  onChange={async (e) => {
+                    setNotes(e.target.value);
+                    await supabase.from('contacts').update({ internal_notes: e.target.value }).eq('id', currentContact.id);
+                  }}
+                  placeholder="Ex: Ficha física conferida..." 
+                  className="w-full h-20 p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-emerald-600 transition resize-none"
+                />
+              </div>
+
+              <button 
+                onClick={() => {
+                  const text = `Paciente: ${currentContact.name}\nTelefone: ${currentContact.phone}\nMotivo: ${currentContact.triage_intent}\nQueixa: ${currentContact.triage_complaint}\nNotas: ${notes}`;
+                  navigator.clipboard.writeText(text);
+                  alert('Dossiê copiado com sucesso!');
+                }}
+                className="w-full py-2 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 transition flex items-center justify-center gap-1.5"
+              >
+                <Copy className="w-3.5 h-3.5" /> Copiar para o Prontuário
+              </button>
+            </div>
+          </aside>
+        )}
+
+      </div>
+    </div>
+  );
+}
