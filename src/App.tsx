@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Search, Bot, CalendarCheck, Send, AlertCircle, Copy, Sparkles, RefreshCw
+  Search, Bot, CalendarCheck, Send, AlertCircle, Copy, Sparkles, RefreshCw,
+  Settings, Lock, KeyRound, Check, X, ShieldAlert
 } from 'lucide-react';
 import { supabase } from './supabase';
 
@@ -37,6 +38,15 @@ export default function App() {
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(true);
 
+  // Estados da Área de Administração do Prompt
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [promptText, setPromptText] = useState('');
+  const [isSavingPrompt, setIsSavingPrompt] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
   const fetchContacts = async () => {
     const { data, error } = await supabase
       .from('contacts')
@@ -62,6 +72,18 @@ export default function App() {
 
     if (!error && data) {
       setMessages(data as Message[]);
+    }
+  };
+
+  const loadPromptSettings = async () => {
+    const { data } = await supabase
+      .from('clinic_settings')
+      .select('value')
+      .eq('key', 'system_prompt')
+      .single();
+
+    if (data) {
+      setPromptText(data.value);
     }
   };
 
@@ -150,6 +172,42 @@ export default function App() {
     setContacts(contacts.map(c => c.id === currentContact.id ? { ...c, status: 'scheduled' } : c));
   };
 
+  const handleAdminLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError('');
+
+    const { data } = await supabase
+      .from('clinic_settings')
+      .select('value')
+      .eq('key', 'admin_password')
+      .single();
+
+    if (data && data.value === passwordInput) {
+      setIsAdminAuthenticated(true);
+      setPasswordInput('');
+      await loadPromptSettings();
+    } else {
+      setPasswordError('Senha incorreta. Tente novamente.');
+    }
+  };
+
+  const handleSavePrompt = async () => {
+    setIsSavingPrompt(true);
+    setSaveSuccess(false);
+
+    await supabase
+      .from('clinic_settings')
+      .upsert({
+        key: 'system_prompt',
+        value: promptText,
+        updated_at: new Date().toISOString()
+      });
+
+    setIsSavingPrompt(false);
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 3000);
+  };
+
   return (
     <div className="h-screen w-screen flex flex-col bg-slate-900 text-slate-800 antialiased overflow-hidden font-sans">
       
@@ -173,6 +231,16 @@ export default function App() {
           <div className="text-xs text-slate-400 border-l border-slate-800 pl-4 flex items-center gap-2">
             <span>Operador: <strong>Poliana</strong></span>
           </div>
+
+          {/* BOTÃO DE ACESSO À ADMINISTRAÇÃO */}
+          <button 
+            onClick={() => setIsSettingsOpen(true)}
+            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition flex items-center gap-1.5 text-xs border border-slate-700"
+            title="Configurações de IA (Administrador)"
+          >
+            <Settings className="w-4 h-4 text-emerald-400" />
+            <span className="hidden md:inline">Instruções IA</span>
+          </button>
         </div>
       </header>
 
@@ -193,7 +261,7 @@ export default function App() {
               />
             </div>
             
-            {/* BOTÕES DE FILTRO SEPARADOS */}
+            {/* ABAS COM CONTAGENS SEPARADAS */}
             <div className="flex gap-1 overflow-x-auto pb-0.5">
               <button 
                 onClick={() => setFilter('waiting')} 
@@ -277,7 +345,6 @@ export default function App() {
         <section className="flex-1 bg-[#f0f2f5] flex flex-col border-r border-slate-200 relative">
           {currentContact ? (
             <>
-              {/* BARRA SUPERIOR DO CHAT */}
               <div className="bg-white px-5 py-3 border-b border-slate-200 flex items-center justify-between shadow-sm">
                 <div>
                   <div className="flex items-center gap-2">
@@ -326,7 +393,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* HISTÓRICO DE MENSAGENS */}
               <div className="flex-1 p-5 overflow-y-auto space-y-3.5">
                 {messages.map(msg => (
                   <div 
@@ -359,7 +425,7 @@ export default function App() {
                 ))}
               </div>
 
-              {/* RESPOSTAS RÁPIDAS PADRONIZADAS */}
+              {/* ATALHOS RÁPIDOS */}
               <div className="bg-slate-50 border-t border-slate-200 px-4 py-2 flex items-center gap-2 overflow-x-auto shrink-0">
                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider shrink-0">Atalhos:</span>
                 <button 
@@ -382,7 +448,7 @@ export default function App() {
                 </button>
               </div>
 
-              {/* INPUT DE MENSAGEM */}
+              {/* ENVIAR MENSAGEM */}
               <div className="bg-white p-3 border-t border-slate-200 flex items-center gap-2 shrink-0">
                 <input 
                   type="text" 
@@ -407,7 +473,7 @@ export default function App() {
           )}
         </section>
 
-        {/* COLUNA 3: DOSSIÊ DE TRIAGEM (GEMINI) */}
+        {/* COLUNA 3: DOSSIÊ DE TRIAGEM */}
         {currentContact && (
           <aside className="w-80 bg-white border-l border-slate-200 flex flex-col shrink-0 overflow-y-auto">
             <div className="p-4 border-b border-slate-100 bg-slate-50/60">
@@ -474,6 +540,123 @@ export default function App() {
         )}
 
       </div>
+
+      {/* MODAL ADMINISTRATIVO DE INSTRUÇÕES DA IA COM SENHA */}
+      {isSettingsOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col">
+            
+            {/* CABEÇALHO DO MODAL */}
+            <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between text-white">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-purple-600/20 border border-purple-500/40 flex items-center justify-center text-purple-400">
+                  <Bot className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-semibold">Configurações da Marina (IA)</h2>
+                  <p className="text-[11px] text-slate-400">Painel Restrito do Administrador</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => {
+                  setIsSettingsOpen(false);
+                  setIsAdminAuthenticated(false);
+                  setPasswordInput('');
+                  setPasswordError('');
+                }}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* CONTEÚDO DO MODAL */}
+            <div className="p-6">
+              {!isAdminAuthenticated ? (
+                /* ECRÃ DE LOGIN COM SENHA */
+                <form onSubmit={handleAdminLogin} className="space-y-4 max-w-sm mx-auto py-4">
+                  <div className="w-12 h-12 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center mx-auto text-emerald-400">
+                    <Lock className="w-6 h-6" />
+                  </div>
+                  <div className="text-center">
+                    <h3 className="text-sm font-bold text-slate-100">Área Protegida</h3>
+                    <p className="text-xs text-slate-400 mt-1">Introduza a senha de administrador para editar as diretrizes da secretária virtual.</p>
+                  </div>
+
+                  <div>
+                    <input 
+                      type="password"
+                      value={passwordInput}
+                      onChange={e => setPasswordInput(e.target.value)}
+                      placeholder="Senha de acesso..."
+                      autoFocus
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                    />
+                    {passwordError && (
+                      <p className="text-rose-400 text-[11px] mt-1.5 flex items-center gap-1">
+                        <ShieldAlert className="w-3.5 h-3.5" /> {passwordError}
+                      </p>
+                    )}
+                  </div>
+
+                  <button 
+                    type="submit"
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 rounded-xl text-xs transition flex items-center justify-center gap-1.5"
+                  >
+                    <KeyRound className="w-3.5 h-3.5" /> Desbloquear Editor
+                  </button>
+                </form>
+              ) : (
+                /* EDITOR DO SYSTEM INSTRUCTIONS */
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-purple-400" /> System Instructions da Marina
+                    </label>
+                    <span className="text-[11px] text-slate-400">Atualização em tempo real</span>
+                  </div>
+
+                  <textarea 
+                    value={promptText}
+                    onChange={e => setPromptText(e.target.value)}
+                    rows={12}
+                    placeholder="Escreva aqui as instruções de atendimento..."
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3.5 text-xs font-mono text-slate-200 leading-relaxed focus:outline-none focus:border-purple-500 resize-none"
+                  />
+
+                  <div className="flex items-center justify-between pt-2">
+                    <div className="text-[11px] text-slate-400">
+                      {saveSuccess && (
+                        <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                          <Check className="w-3.5 h-3.5" /> Instruções salvas com sucesso no banco!
+                        </span>
+                      )}
+                    </div>
+
+                    <button 
+                      onClick={handleSavePrompt}
+                      disabled={isSavingPrompt}
+                      className="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-medium px-4 py-2 rounded-xl text-xs transition flex items-center gap-1.5"
+                    >
+                      {isSavingPrompt ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" /> A guardar...
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-3.5 h-3.5" /> Salvar Alterações
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
