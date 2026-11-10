@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Search, Bot, CalendarCheck, Send, AlertCircle, Copy, Sparkles, RefreshCw,
-  Settings, Lock, KeyRound, Check, X, ShieldAlert, Clock, LogOut, Mail
+  Settings, Lock, KeyRound, Check, X, ShieldAlert, Clock, MessageSquareQuote, Edit3
 } from 'lucide-react';
 import { supabase } from './supabase';
 
@@ -30,16 +30,59 @@ interface Contact {
   days_inactive?: number;
 }
 
-export default function App() {
-  // Estados de Autenticação Global
-  const [session, setSession] = useState<any>(null);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
-  const [loginError, setLoginError] = useState('');
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
+interface QuickReply {
+  id: string;
+  slug: string;
+  title: string;
+  content: string;
+  category: string;
+  display_order: number;
+}
 
-  // Estados Operacionais
+const DEFAULT_QUICK_REPLIES: QuickReply[] = [
+  {
+    id: '1',
+    slug: 'gancho_clinico',
+    title: 'Gancho Clínico (3-6d)',
+    category: 'follow_up',
+    content: 'Olá, {nome}! Aqui é a Poliana da equipe do Dr. Cristiano. Como conversamos há alguns dias sobre a sua consulta, queria verificar se ficou alguma dúvida sobre o atendimento ou se precisa de ajuda com relação aos horários.',
+    display_order: 1
+  },
+  {
+    id: '2',
+    slug: 'desapego_positivo',
+    title: 'Desapego Positivo (7-14d)',
+    category: 'follow_up',
+    content: 'Oi, {nome}! Imaginei que sua rotina estivesse corrida ou que tenha optado por adiar a consulta, e não tem problema nenhum. Vou encerrar seu atendimento por aqui para não incomodar. Se quiser retomar o cuidado em outro momento, é só nos chamar!',
+    display_order: 2
+  },
+  {
+    id: '3',
+    slug: 'dados_receita',
+    title: 'Dados da Receita',
+    category: 'atendimento',
+    content: 'Para que possamos emitir ou validar a sua receita/pedido médico, por favor confirme:\n- Nome completo:\n- CPF:\n- Data de nascimento:\n- Endereço completo com CEP:\n- Farmácia ou medicação necessária:',
+    display_order: 3
+  },
+  {
+    id: '4',
+    slug: 'horarios_savassi',
+    title: 'Horários Savassi',
+    category: 'agendamento',
+    content: 'O Dr. Cristiano realiza os atendimentos presenciais na Savassi (Belo Horizonte) às terças e quintas-feiras, com horários agendados para garantir uma avaliação aprofundada e sem pressa. Gostaria de verificar as opções disponíveis para esta semana ou para a próxima?',
+    display_order: 4
+  },
+  {
+    id: '5',
+    slug: 'regra_reembolso',
+    title: 'Regra de Reembolso',
+    category: 'financeiro',
+    content: 'O atendimento do Dr. Cristiano é exclusivamente particular, mas emitimos nota fiscal e relatório médico completo com todos os critérios exigidos pelas operadoras para que você solicite o reembolso diretamente ao seu plano de saúde. A maioria dos convênios oferece essa modalidade!',
+    display_order: 5
+  }
+];
+
+export default function App() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [selectedId, setSelectedId] = useState<string>('');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -50,6 +93,13 @@ export default function App() {
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(true);
 
+  // Estados dos Modelos Rápidos
+  const [quickReplies, setQuickReplies] = useState<QuickReply[]>(DEFAULT_QUICK_REPLIES);
+  const [isTemplatesModalOpen, setIsTemplatesModalOpen] = useState(false);
+  const [editingReplies, setEditingReplies] = useState<QuickReply[]>([]);
+  const [isSavingTemplates, setIsSavingTemplates] = useState(false);
+  const [templatesSaveSuccess, setTemplatesSaveSuccess] = useState(false);
+
   // Estados da Área de Administração do Prompt
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
@@ -58,41 +108,6 @@ export default function App() {
   const [promptText, setPromptText] = useState('');
   const [isSavingPrompt, setIsSavingPrompt] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
-
-  // 1. Verificação de Sessão do Supabase
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setAuthLoading(false);
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setAuthLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoginError('');
-    setIsLoggingIn(true);
-
-    const { error } = await supabase.auth.signInWithPassword({
-      email: loginEmail.trim(),
-      password: loginPassword,
-    });
-
-    if (error) {
-      setLoginError('Credenciais inválidas. Verifique o e-mail e a senha digitados.');
-    }
-    setIsLoggingIn(false);
-  };
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-  };
 
   const fetchContacts = async () => {
     const { data, error } = await supabase
@@ -134,10 +149,23 @@ export default function App() {
     }
   };
 
-  useEffect(() => {
-    if (!session) return;
+  const fetchQuickReplies = async () => {
+    const { data, error } = await supabase
+      .from('quick_replies')
+      .select('*')
+      .order('display_order', { ascending: true });
 
+    if (!error && data && data.length > 0) {
+      setQuickReplies(data as QuickReply[]);
+      setEditingReplies(data as QuickReply[]);
+    } else {
+      setEditingReplies(DEFAULT_QUICK_REPLIES);
+    }
+  };
+
+  useEffect(() => {
     fetchContacts();
+    fetchQuickReplies();
 
     const channel = supabase
       .channel('schema-db-changes')
@@ -156,20 +184,25 @@ export default function App() {
         { event: '*', schema: 'public', table: 'contacts' },
         () => fetchContacts()
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'quick_replies' },
+        () => fetchQuickReplies()
+      )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [selectedId, session]);
+  }, [selectedId]);
 
   useEffect(() => {
-    if (selectedId && session) {
+    if (selectedId) {
       fetchMessages(selectedId);
       const contact = contacts.find((c) => c.id === selectedId);
       if (contact) setNotes(contact.internal_notes || '');
     }
-  }, [selectedId, session]);
+  }, [selectedId]);
 
   const currentContact = contacts.find((c) => c.id === selectedId);
 
@@ -180,10 +213,12 @@ export default function App() {
       contact.tag?.toLowerCase().includes(search.toLowerCase());
     if (!matchesSearch) return false;
 
+    // Filtro por Status Operacional
     if (filter === 'waiting' && contact.status !== 'waiting_agent') return false;
     if (filter === 'in_progress' && contact.status !== 'in_progress') return false;
     if (filter === 'ai' && contact.status !== 'with_ai') return false;
 
+    // Filtro por Cadência de Inatividade
     if (cadenceFilter !== 'all' && contact.cadence_stage !== cadenceFilter) return false;
 
     return true;
@@ -211,6 +246,13 @@ export default function App() {
     fetchMessages(currentContact.id);
   };
 
+  const handleInsertQuickReply = (content: string) => {
+    if (!currentContact) return;
+    const firstName = currentContact.name ? currentContact.name.split(' ')[0] : 'tudo bem';
+    const parsed = content.replace(/{nome}/g, firstName);
+    setInputText(parsed);
+  };
+
   const toggleAiStatus = async () => {
     if (!currentContact) return;
     const newStatus = currentContact.status === 'with_ai' ? 'waiting_agent' : 'with_ai';
@@ -225,7 +267,7 @@ export default function App() {
     setContacts(contacts.map(c => c.id === currentContact.id ? { ...c, status: 'scheduled' } : c));
   };
 
-  const handleAdminLogin = async (e: React.FormEvent) => {
+  const handleAdminLogin = async (e: React.FormEvent, onSuccessCallback?: () => void) => {
     e.preventDefault();
     setPasswordError('');
 
@@ -235,11 +277,14 @@ export default function App() {
       .eq('key', 'admin_password')
       .single();
 
-    // Valida com o banco ou com a senha mestra Marina23@
-    if ((data && data.value === passwordInput) || passwordInput === 'Marina23@') {
+    if (data && data.value === passwordInput) {
       setIsAdminAuthenticated(true);
       setPasswordInput('');
-      await loadPromptSettings();
+      if (onSuccessCallback) {
+        onSuccessCallback();
+      } else {
+        await loadPromptSettings();
+      }
     } else {
       setPasswordError('Senha incorreta. Tente novamente.');
     }
@@ -262,95 +307,27 @@ export default function App() {
     setTimeout(() => setSaveSuccess(false), 3000);
   };
 
-  // Ecrã de Carregamento Inicial
-  if (authLoading) {
-    return (
-      <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-950 text-slate-400 gap-3">
-        <RefreshCw className="w-6 h-6 animate-spin text-emerald-500" />
-        <span className="text-xs font-medium">Validando credenciais da clínica...</span>
-      </div>
-    );
-  }
+  const handleSaveTemplates = async () => {
+    setIsSavingTemplates(true);
+    setTemplatesSaveSuccess(false);
 
-  // Ecrã de Login (Quando não autenticado)
-  if (!session) {
-    return (
-      <div className="h-screen w-screen flex items-center justify-center bg-slate-950 p-4 font-sans text-slate-100">
-        <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-6 sm:p-8 space-y-6">
-          <div className="text-center space-y-2">
-            <div className="w-12 h-12 rounded-xl bg-emerald-600/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-bold text-lg mx-auto shadow-inner">
-              CM
-            </div>
-            <h1 className="text-base font-bold text-slate-100">Dr. Cristiano Miranda</h1>
-            <p className="text-xs text-slate-400">Central de Atendimento • Acesso Restrito</p>
-          </div>
+    for (const item of editingReplies) {
+      await supabase
+        .from('quick_replies')
+        .upsert({
+          slug: item.slug,
+          title: item.title,
+          content: item.content,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'slug' });
+    }
 
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider block mb-1">
-                E-mail de Acesso
-              </label>
-              <div className="relative">
-                <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
-                <input
-                  type="email"
-                  required
-                  value={loginEmail}
-                  onChange={(e) => setLoginEmail(e.target.value)}
-                  placeholder="seu-email@clinica.com"
-                  className="w-full pl-9 pr-3 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition"
-                />
-              </div>
-            </div>
+    await fetchQuickReplies();
+    setIsSavingTemplates(false);
+    setTemplatesSaveSuccess(true);
+    setTimeout(() => setTemplatesSaveSuccess(false), 3000);
+  };
 
-            <div>
-              <label className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider block mb-1">
-                Senha
-              </label>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
-                <input
-                  type="password"
-                  required
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full pl-9 pr-3 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition"
-                />
-              </div>
-            </div>
-
-            {loginError && (
-              <div className="p-3 bg-rose-950/60 border border-rose-800/60 rounded-xl text-rose-300 text-[11px] flex items-center gap-2">
-                <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0" />
-                <span>{loginError}</span>
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={isLoggingIn}
-              className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/20"
-            >
-              {isLoggingIn ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" /> Entrando...
-                </>
-              ) : (
-                'Entrar no Painel'
-              )}
-            </button>
-          </form>
-
-          <p className="text-[10px] text-center text-slate-500">
-            Ambiente clínico protegido. Todos os acessos são auditados.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // Painel Principal Autenticado
   return (
     <div className="h-screen w-screen flex flex-col bg-slate-900 text-slate-800 antialiased overflow-hidden font-sans">
       
@@ -377,22 +354,15 @@ export default function App() {
 
           {/* BOTÃO DE ACESSO À ADMINISTRAÇÃO */}
           <button 
-            onClick={() => setIsSettingsOpen(true)}
+            onClick={() => {
+              setIsSettingsOpen(true);
+              if (isAdminAuthenticated) loadPromptSettings();
+            }}
             className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition flex items-center gap-1.5 text-xs border border-slate-700"
             title="Configurações de IA (Administrador)"
           >
             <Settings className="w-4 h-4 text-emerald-400" />
             <span className="hidden md:inline">Instruções IA</span>
-          </button>
-
-          {/* BOTÃO DE LOGOUT */}
-          <button 
-            onClick={handleLogout}
-            className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-950/60 text-slate-400 hover:text-rose-300 transition flex items-center gap-1.5 text-xs border border-slate-700 hover:border-rose-800"
-            title="Encerrar Sessão"
-          >
-            <LogOut className="w-4 h-4" />
-            <span className="hidden md:inline">Sair</span>
           </button>
         </div>
       </header>
@@ -485,10 +455,10 @@ export default function App() {
           <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
             {loading ? (
               <div className="p-6 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
-                <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" /> Carregando contatos...
+                <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" /> A carregar contactos...
               </div>
             ) : filteredContacts.length === 0 ? (
-              <div className="p-6 text-center text-xs text-slate-400">Nenhum contato encontrado.</div>
+              <div className="p-6 text-center text-xs text-slate-400">Nenhum contacto encontrado.</div>
             ) : (
               filteredContacts.map(contact => (
                 <div 
@@ -527,6 +497,7 @@ export default function App() {
                       </span>
                     )}
 
+                    {/* BADGE DE INATIVIDADE DINÂMICO */}
                     {contact.days_inactive !== undefined && contact.days_inactive >= 3 && contact.status !== 'scheduled' && (
                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium inline-flex items-center gap-1 border ${
                         contact.days_inactive >= 15
@@ -625,7 +596,7 @@ export default function App() {
                           Poliana (Secretária)
                         </div>
                       )}
-                      <p>{msg.text}</p>
+                      <p className="whitespace-pre-wrap">{msg.text}</p>
                       <span className={msg.sender === 'agent' ? 'block text-[10px] text-right mt-1 text-emerald-100' : 'block text-[10px] text-right mt-1 text-slate-400'}>
                         {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
@@ -634,40 +605,32 @@ export default function App() {
                 ))}
               </div>
 
-              {/* ATALHOS RÁPIDOS */}
+              {/* ATALHOS RÁPIDOS DINÂMICOS DO BANCO */}
               <div className="bg-slate-50 border-t border-slate-200 px-4 py-2 flex items-center gap-2 overflow-x-auto shrink-0">
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider shrink-0">Atalhos:</span>
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider shrink-0 flex items-center gap-1">
+                  <MessageSquareQuote className="w-3 h-3 text-emerald-600" /> Atalhos:
+                </span>
                 
-                <button 
-                  onClick={() => setInputText(`Olá, ${currentContact.name}! Aqui é a Poliana da equipe do Dr. Cristiano. Como conversamos há alguns dias sobre a sua consulta, queria verificar se ficou alguma dúvida sobre o atendimento ou se precisa de ajuda com relação aos horários.`)}
-                  className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-full text-[11px] text-amber-800 whitespace-nowrap transition font-medium"
-                >
-                  🔄 Gancho Clínico (3-6d)
-                </button>
-                <button 
-                  onClick={() => setInputText(`Oi, ${currentContact.name}! Imaginei que sua rotina estivesse corrida ou que tenha optado por adiar a consulta, e não tem problema nenhum. Vou arquivar sua conversa por aqui para não incomodar. Se quiser retomar o cuidado em outro momento, é só nos chamar!`)}
-                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-full text-[11px] text-slate-700 whitespace-nowrap transition"
-                >
-                  🚪 Desapego Positivo (7-14d)
-                </button>
+                {quickReplies.map((qr) => (
+                  <button 
+                    key={qr.slug}
+                    onClick={() => handleInsertQuickReply(qr.content)}
+                    className="px-2.5 py-1 bg-white hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 rounded-full text-[11px] text-slate-700 hover:text-emerald-800 whitespace-nowrap transition font-medium shadow-2xs"
+                  >
+                    {qr.title}
+                  </button>
+                ))}
 
-                <button 
-                  onClick={() => setInputText('Olá! Para adiantarmos com o Dr. Cristiano, qual o nome exato da medicação e a dosagem que você precisa renovar?')}
-                  className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-full text-[11px] text-slate-700 whitespace-nowrap transition"
+                {/* BOTÃO PARA EDITAR OS MODELOS */}
+                <button
+                  onClick={() => {
+                    setEditingReplies(quickReplies);
+                    setIsTemplatesModalOpen(true);
+                  }}
+                  className="p-1 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition ml-auto shrink-0"
+                  title="Editar Modelos de Mensagem"
                 >
-                  💊 Dados da Receita
-                </button>
-                <button 
-                  onClick={() => setInputText('Para a consulta presencial na Savassi, temos horários abertos para quinta-feira às 14h ou sexta às 10h. Algum desses atende você?')}
-                  className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-full text-[11px] text-slate-700 whitespace-nowrap transition"
-                >
-                  📅 Horários Savassi
-                </button>
-                <button 
-                  onClick={() => setInputText('O atendimento do Dr. Cristiano é estritamente particular. Emitimos o recibo detalhado para você solicitar o reembolso junto ao convênio.')}
-                  className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-full text-[11px] text-slate-700 whitespace-nowrap transition"
-                >
-                  📄 Regra de Reembolso
+                  <Edit3 className="w-3.5 h-3.5" />
                 </button>
               </div>
 
@@ -691,7 +654,7 @@ export default function App() {
             </>
           ) : (
             <div className="flex-1 flex items-center justify-center text-xs text-slate-400">
-              Selecione um contato para abrir o atendimento.
+              Selecione um contacto para abrir o atendimento.
             </div>
           )}
         </section>
@@ -764,6 +727,137 @@ export default function App() {
 
       </div>
 
+      {/* MODAL DE EDIÇÃO DOS MODELOS DE RESPOSTAS RÁPIDAS */}
+      {isTemplatesModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            
+            {/* CABEÇALHO */}
+            <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between text-white shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-emerald-600/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                  <MessageSquareQuote className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-semibold">Editar Modelos de Mensagens</h2>
+                  <p className="text-[11px] text-slate-400">Respostas rápidas e gatilhos de follow-up</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => {
+                  setIsTemplatesModalOpen(false);
+                  setPasswordError('');
+                }}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* CONTEÚDO */}
+            <div className="p-6 overflow-y-auto flex-1">
+              {!isAdminAuthenticated ? (
+                <form onSubmit={(e) => handleAdminLogin(e, () => {})} className="space-y-4 max-w-sm mx-auto py-4">
+                  <div className="w-12 h-12 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center mx-auto text-emerald-400">
+                    <Lock className="w-6 h-6" />
+                  </div>
+                  <div className="text-center">
+                    <h3 className="text-sm font-bold text-slate-100">Área Protegida</h3>
+                    <p className="text-xs text-slate-400 mt-1">Introduza a senha de administrador para editar os modelos.</p>
+                  </div>
+
+                  <div>
+                    <input 
+                      type="password"
+                      value={passwordInput}
+                      onChange={e => setPasswordInput(e.target.value)}
+                      placeholder="Senha de acesso..."
+                      autoFocus
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                    />
+                    {passwordError && (
+                      <p className="text-rose-400 text-[11px] mt-1.5 flex items-center gap-1">
+                        <ShieldAlert className="w-3.5 h-3.5" /> {passwordError}
+                      </p>
+                    )}
+                  </div>
+
+                  <button 
+                    type="submit"
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 rounded-xl text-xs transition flex items-center justify-center gap-1.5"
+                  >
+                    <KeyRound className="w-3.5 h-3.5" /> Desbloquear Editor
+                  </button>
+                </form>
+              ) : (
+                <div className="space-y-4">
+                  <p className="text-xs text-slate-400 bg-slate-800/50 p-3 rounded-lg border border-slate-800">
+                    💡 Dica: Use a tag <strong>{'{nome}'}</strong> no texto para inserir automaticamente o primeiro nome do paciente ao clicar no atalho.
+                  </p>
+
+                  <div className="space-y-4">
+                    {editingReplies.map((item, index) => (
+                      <div key={item.slug} className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <input
+                            type="text"
+                            value={item.title}
+                            onChange={(e) => {
+                              const updated = [...editingReplies];
+                              updated[index].title = e.target.value;
+                              setEditingReplies(updated);
+                            }}
+                            className="bg-transparent font-semibold text-xs text-emerald-400 border-b border-transparent hover:border-slate-700 focus:border-emerald-500 focus:outline-none px-1"
+                          />
+                          <span className="text-[10px] text-slate-500 font-mono">slug: {item.slug}</span>
+                        </div>
+                        <textarea
+                          rows={3}
+                          value={item.content}
+                          onChange={(e) => {
+                            const updated = [...editingReplies];
+                            updated[index].content = e.target.value;
+                            setEditingReplies(updated);
+                          }}
+                          className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200 leading-relaxed focus:outline-none focus:border-emerald-500 resize-none font-sans"
+                        />
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-3">
+                    <div>
+                      {templatesSaveSuccess && (
+                        <span className="text-emerald-400 font-semibold text-xs flex items-center gap-1">
+                          <Check className="w-3.5 h-3.5" /> Modelos atualizados com sucesso no Supabase!
+                        </span>
+                      )}
+                    </div>
+
+                    <button 
+                      onClick={handleSaveTemplates}
+                      disabled={isSavingTemplates}
+                      className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-medium px-4 py-2 rounded-xl text-xs transition flex items-center gap-1.5"
+                    >
+                      {isSavingTemplates ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Salvando...
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-3.5 h-3.5" /> Salvar Todos os Modelos
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+          </div>
+        </div>
+      )}
+
       {/* MODAL ADMINISTRATIVO DE INSTRUÇÕES DA IA COM SENHA */}
       {isSettingsOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -783,8 +877,6 @@ export default function App() {
               <button 
                 onClick={() => {
                   setIsSettingsOpen(false);
-                  setIsAdminAuthenticated(false);
-                  setPasswordInput('');
                   setPasswordError('');
                 }}
                 className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
@@ -796,8 +888,8 @@ export default function App() {
             {/* CONTEÚDO DO MODAL */}
             <div className="p-6">
               {!isAdminAuthenticated ? (
-                /* ECRÃ DE SENHA DO MODAL */
-                <form onSubmit={handleAdminLogin} className="space-y-4 max-w-sm mx-auto py-4">
+                /* ECRÃ DE LOGIN COM SENHA */
+                <form onSubmit={(e) => handleAdminLogin(e)} className="space-y-4 max-w-sm mx-auto py-4">
                   <div className="w-12 h-12 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center mx-auto text-emerald-400">
                     <Lock className="w-6 h-6" />
                   </div>
@@ -863,7 +955,7 @@ export default function App() {
                     >
                       {isSavingPrompt ? (
                         <>
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Salvando...
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" /> A guardar...
                         </>
                       ) : (
                         <>
