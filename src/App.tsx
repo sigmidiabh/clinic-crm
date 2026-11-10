@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Search, Bot, CalendarCheck, Send, AlertCircle, Copy, Sparkles, RefreshCw,
-  Settings, Lock, KeyRound, Check, X, ShieldAlert
+  Settings, Lock, KeyRound, Check, X, ShieldAlert, Clock
 } from 'lucide-react';
 import { supabase } from './supabase';
 
@@ -26,6 +26,8 @@ interface Contact {
   triage_complaint: string;
   reimbursement_notice: boolean;
   internal_notes: string;
+  cadence_stage?: 'recente' | 'followup_3d' | 'followup_7d' | 'inativo' | 'concluido';
+  days_inactive?: number;
 }
 
 export default function App() {
@@ -33,6 +35,7 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string>('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [filter, setFilter] = useState<'all' | 'waiting' | 'in_progress' | 'ai'>('all');
+  const [cadenceFilter, setCadenceFilter] = useState<'all' | 'followup_3d' | 'followup_7d' | 'inativo'>('all');
   const [search, setSearch] = useState('');
   const [inputText, setInputText] = useState('');
   const [notes, setNotes] = useState('');
@@ -49,7 +52,7 @@ export default function App() {
 
   const fetchContacts = async () => {
     const { data, error } = await supabase
-      .from('contacts')
+      .from('vw_contacts_cadence')
       .select('*')
       .order('last_message_at', { ascending: false });
 
@@ -130,9 +133,15 @@ export default function App() {
       contact.phone?.includes(search) ||
       contact.tag?.toLowerCase().includes(search.toLowerCase());
     if (!matchesSearch) return false;
-    if (filter === 'waiting') return contact.status === 'waiting_agent';
-    if (filter === 'in_progress') return contact.status === 'in_progress';
-    if (filter === 'ai') return contact.status === 'with_ai';
+
+    // Filtro por Status Operacional
+    if (filter === 'waiting' && contact.status !== 'waiting_agent') return false;
+    if (filter === 'in_progress' && contact.status !== 'in_progress') return false;
+    if (filter === 'ai' && contact.status !== 'with_ai') return false;
+
+    // Filtro por Cadência de Inatividade
+    if (cadenceFilter !== 'all' && contact.cadence_stage !== cadenceFilter) return false;
+
     return true;
   });
 
@@ -288,6 +297,45 @@ export default function App() {
                 Todos
               </button>
             </div>
+
+            {/* SUB-FILTROS DE CADÊNCIA / INATIVIDADE */}
+            <div className="flex items-center gap-1 pt-1 border-t border-slate-200/60 overflow-x-auto">
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider shrink-0 flex items-center gap-0.5">
+                <Clock className="w-2.5 h-2.5" /> Fila:
+              </span>
+              <button
+                onClick={() => setCadenceFilter('all')}
+                className={`px-1.5 py-0.5 rounded text-[9px] font-medium transition whitespace-nowrap ${
+                  cadenceFilter === 'all' ? 'bg-slate-700 text-white font-semibold' : 'text-slate-500 hover:bg-slate-200'
+                }`}
+              >
+                Todos
+              </button>
+              <button
+                onClick={() => setCadenceFilter('followup_3d')}
+                className={`px-1.5 py-0.5 rounded text-[9px] font-medium transition whitespace-nowrap ${
+                  cadenceFilter === 'followup_3d' ? 'bg-blue-600 text-white font-semibold' : 'text-slate-500 hover:bg-blue-50'
+                }`}
+              >
+                Follow-up (3-6d)
+              </button>
+              <button
+                onClick={() => setCadenceFilter('followup_7d')}
+                className={`px-1.5 py-0.5 rounded text-[9px] font-medium transition whitespace-nowrap ${
+                  cadenceFilter === 'followup_7d' ? 'bg-amber-600 text-white font-semibold' : 'text-slate-500 hover:bg-amber-50'
+                }`}
+              >
+                Fechamento (7-14d)
+              </button>
+              <button
+                onClick={() => setCadenceFilter('inativo')}
+                className={`px-1.5 py-0.5 rounded text-[9px] font-medium transition whitespace-nowrap ${
+                  cadenceFilter === 'inativo' ? 'bg-slate-500 text-white font-semibold' : 'text-slate-500 hover:bg-slate-100'
+                }`}
+              >
+                Inativos (+15d)
+              </button>
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
@@ -334,6 +382,19 @@ export default function App() {
                         Agendado
                       </span>
                     )}
+
+                    {/* BADGE DE INATIVIDADE DINÂMICO */}
+                    {contact.days_inactive !== undefined && contact.days_inactive >= 3 && contact.status !== 'scheduled' && (
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium inline-flex items-center gap-1 border ${
+                        contact.days_inactive >= 15
+                          ? 'bg-slate-100 text-slate-600 border-slate-200'
+                          : contact.days_inactive >= 7
+                            ? 'bg-amber-50 text-amber-800 border-amber-200 font-semibold'
+                            : 'bg-blue-50 text-blue-700 border-blue-200'
+                      }`}>
+                        🕒 {contact.days_inactive}d sem resposta
+                      </span>
+                    )}
                   </div>
                 </div>
               ))
@@ -350,6 +411,11 @@ export default function App() {
                   <div className="flex items-center gap-2">
                     <h2 className="text-sm font-bold text-slate-900">{currentContact.name}</h2>
                     <span className="text-xs text-slate-400">{currentContact.phone}</span>
+                    {currentContact.days_inactive !== undefined && currentContact.days_inactive >= 3 && (
+                      <span className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200 font-medium">
+                        Sem resposta há {currentContact.days_inactive} dias
+                      </span>
+                    )}
                   </div>
                   <div className="text-[11px] font-medium mt-0.5">
                     {currentContact.status === 'waiting_agent' && (
@@ -428,6 +494,21 @@ export default function App() {
               {/* ATALHOS RÁPIDOS */}
               <div className="bg-slate-50 border-t border-slate-200 px-4 py-2 flex items-center gap-2 overflow-x-auto shrink-0">
                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider shrink-0">Atalhos:</span>
+                
+                {/* ATALHOS CLÍNICOS DE CADÊNCIA */}
+                <button 
+                  onClick={() => setInputText(`Olá, ${currentContact.name}! Aqui é a Poliana da equipe do Dr. Cristiano. Como conversamos há alguns dias sobre a sua consulta, queria verificar se ficou alguma dúvida sobre o atendimento ou se precisa de ajuda com relação aos horários.`)}
+                  className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-full text-[11px] text-amber-800 whitespace-nowrap transition font-medium"
+                >
+                  🔄 Gancho Clínico (3-6d)
+                </button>
+                <button 
+                  onClick={() => setInputText(`Oi, ${currentContact.name}! Imaginei que sua rotina estivesse corrida ou que tenha optado por adiar a consulta, e não tem problema nenhum. Vou arquivar sua conversa por aqui para não incomodar. Se quiser retomar o cuidado em outro momento, é só nos chamar!`)}
+                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-full text-[11px] text-slate-700 whitespace-nowrap transition"
+                >
+                  🚪 Desapego Positivo (7-14d)
+                </button>
+
                 <button 
                   onClick={() => setInputText('Olá! Para adiantarmos com o Dr. Cristiano, qual o nome exato da medicação e a dosagem que você precisa renovar?')}
                   className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-full text-[11px] text-slate-700 whitespace-nowrap transition"
