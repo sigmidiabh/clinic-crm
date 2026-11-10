@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Search, Bot, CalendarCheck, Send, AlertCircle, Copy, Sparkles, RefreshCw,
-  Settings, Lock, KeyRound, Check, X, ShieldAlert, Clock, MessageSquareQuote, Edit3
+  Settings, Lock, KeyRound, Check, X, ShieldAlert, Clock, MessageSquareQuote, 
+  Edit3, Download, FileSpreadsheet
 } from 'lucide-react';
 import { supabase } from './supabase';
 
@@ -99,11 +100,11 @@ export default function App() {
   const [isOperatorAuthenticated, setIsOperatorAuthenticated] = useState(false);
   const [operatorPasswordInput, setOperatorPasswordInput] = useState('');
   const [operatorPasswordError, setOperatorPasswordError] = useState('');
-  const [editingReplies, setEditingReplies] = useState<QuickReply[]>([]);
+  const [editingReplies, setEditingReplies] = useState<QuickReply[]>(DEFAULT_QUICK_REPLIES);
   const [isSavingTemplates, setIsSavingTemplates] = useState(false);
   const [templatesSaveSuccess, setTemplatesSaveSuccess] = useState(false);
 
-  // Estados da Área de Administração Crítica (System Prompt)
+  // Estados da Área de Administração Crítica (System Prompt & Exportação)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [adminPasswordInput, setAdminPasswordInput] = useState('');
@@ -111,6 +112,8 @@ export default function App() {
   const [promptText, setPromptText] = useState('');
   const [isSavingPrompt, setIsSavingPrompt] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [exportDays, setExportDays] = useState<'7' | '30' | 'all'>('7');
+  const [isExporting, setIsExporting] = useState(false);
 
   const fetchContacts = async () => {
     const { data, error } = await supabase
@@ -216,12 +219,10 @@ export default function App() {
       contact.tag?.toLowerCase().includes(search.toLowerCase());
     if (!matchesSearch) return false;
 
-    // Filtro por Status Operacional
     if (filter === 'waiting' && contact.status !== 'waiting_agent') return false;
     if (filter === 'in_progress' && contact.status !== 'in_progress') return false;
     if (filter === 'ai' && contact.status !== 'with_ai') return false;
 
-    // Filtro por Cadência de Inatividade
     if (cadenceFilter !== 'all' && contact.cadence_stage !== cadenceFilter) return false;
 
     return true;
@@ -270,7 +271,6 @@ export default function App() {
     setContacts(contacts.map(c => c.id === currentContact.id ? { ...c, status: 'scheduled' } : c));
   };
 
-  // Login exclusivo para System Instructions (Admin Mestre)
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAdminPasswordError('');
@@ -290,7 +290,6 @@ export default function App() {
     }
   };
 
-  // Login exclusivo para Respostas Rápidas (Operador ou Admin)
   const handleOperatorLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setOperatorPasswordError('');
@@ -348,6 +347,111 @@ export default function App() {
     setTimeout(() => setTemplatesSaveSuccess(false), 3000);
   };
 
+  // EXPORTAÇÃO INDIVIDUAL (CHAT ATUAL EM TXT)
+  const handleExportSingleChat = () => {
+    if (!currentContact || messages.length === 0) return;
+
+    let content = `======================================================\n`;
+    content += `HISTÓRICO DE ATENDIMENTO - DR. CRISTIANO MIRANDA\n`;
+    content += `Paciente: ${currentContact.name} (${currentContact.phone})\n`;
+    content += `Status Atual: ${currentContact.status} | Tag: ${currentContact.tag}\n`;
+    content += `Motivo: ${currentContact.triage_intent || 'N/A'}\n`;
+    content += `Modalidade: ${currentContact.triage_modality || 'N/A'}\n`;
+    content += `Queixa: ${currentContact.triage_complaint || 'N/A'}\n`;
+    content += `Data da Exportação: ${new Date().toLocaleString('pt-BR')}\n`;
+    content += `======================================================\n\n`;
+
+    messages.forEach((msg) => {
+      const time = new Date(msg.created_at).toLocaleString('pt-BR');
+      let senderLabel = '[PACIENTE]';
+      if (msg.sender === 'bot') senderLabel = '[MARINA - IA]';
+      if (msg.sender === 'agent') senderLabel = '[POLIANA - SECRETÁRIA]';
+
+      content += `${time} - ${senderLabel}:\n${msg.text}\n\n`;
+    });
+
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `atendimento_${currentContact.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.txt`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // EXPORTAÇÃO GERAL (CSV COMPLETO PARA AUDITORIA/ANÁLISE)
+  const handleExportAllMessagesCSV = async () => {
+    setIsExporting(true);
+
+    try {
+      let query = supabase
+        .from('messages')
+        .select(`
+          id,
+          created_at,
+          sender,
+          text,
+          phone,
+          contacts (
+            name,
+            status,
+            triage_intent,
+            triage_modality
+          )
+        `)
+        .order('created_at', { ascending: true });
+
+      if (exportDays !== 'all') {
+        const days = parseInt(exportDays, 10);
+        const dateLimit = new Date();
+        dateLimit.setDate(dateLimit.getDate() - days);
+        query = query.gte('created_at', dateLimit.toISOString());
+      }
+
+      const { data, error } = await query;
+
+      if (error || !data) {
+        alert('Erro ao exportar dados do Supabase.');
+        setIsExporting(false);
+        return;
+      }
+
+      // Montar CSV com cabeçalho
+      const headers = ['Data_Hora', 'Paciente_Nome', 'Telefone', 'Status_Atual', 'Remetente', 'Motivo_Triagem', 'Modalidade', 'Mensagem'];
+      
+      const rows = data.map((item: any) => {
+        const date = new Date(item.created_at).toLocaleString('pt-BR');
+        const name = (item.contacts?.name || 'Não identificado').replace(/"/g, '""');
+        const phone = item.phone || '';
+        const status = item.contacts?.status || '';
+        
+        let senderRole = 'Paciente';
+        if (item.sender === 'bot') senderRole = 'Marina (IA)';
+        if (item.sender === 'agent') senderRole = 'Poliana (Secretária)';
+
+        const intent = (item.contacts?.triage_intent || '').replace(/"/g, '""');
+        const modality = (item.contacts?.triage_modality || '').replace(/"/g, '""');
+        const messageText = (item.text || '').replace(/"/g, '""').replace(/\n/g, ' ');
+
+        return `"${date}","${name}","${phone}","${status}","${senderRole}","${intent}","${modality}","${messageText}"`;
+      });
+
+      const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `relatorio_mensagens_${exportDays}d_${new Date().toISOString().split('T')[0]}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      alert('Erro inesperado durante a geração do arquivo CSV.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div className="h-screen w-screen flex flex-col bg-slate-900 text-slate-800 antialiased overflow-hidden font-sans">
       
@@ -372,14 +476,14 @@ export default function App() {
             <span>Operador: <strong>Poliana</strong></span>
           </div>
 
-          {/* BOTÃO DE ACESSO CRÍTICO: INSTRUÇÕES IA */}
+          {/* BOTÃO DE ACESSO CRÍTICO: INSTRUÇÕES IA & EXPORTAÇÃO */}
           <button 
             onClick={() => {
               setIsSettingsOpen(true);
               if (isAdminAuthenticated) loadPromptSettings();
             }}
             className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition flex items-center gap-1.5 text-xs border border-slate-700"
-            title="Instruções Críticas da Marina (Acesso Restrito do Administrador)"
+            title="Instruções da IA & Relatórios de Mensagens"
           >
             <Settings className="w-4 h-4 text-emerald-400" />
             <span className="hidden md:inline">Instruções IA</span>
@@ -404,7 +508,6 @@ export default function App() {
               />
             </div>
             
-            {/* ABAS COM CONTAGENS SEPARADAS */}
             <div className="flex gap-1 overflow-x-auto pb-0.5">
               <button 
                 onClick={() => setFilter('waiting')} 
@@ -432,7 +535,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* SUB-FILTROS DE CADÊNCIA / INATIVIDADE */}
             <div className="flex items-center gap-1 pt-1 border-t border-slate-200/60 overflow-x-auto">
               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider shrink-0 flex items-center gap-0.5">
                 <Clock className="w-2.5 h-2.5" /> Fila:
@@ -517,7 +619,6 @@ export default function App() {
                       </span>
                     )}
 
-                    {/* BADGE DE INATIVIDADE DINÂMICO */}
                     {contact.days_inactive !== undefined && contact.days_inactive >= 3 && contact.status !== 'scheduled' && (
                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium inline-flex items-center gap-1 border ${
                         contact.days_inactive >= 15
@@ -576,6 +677,16 @@ export default function App() {
                 </div>
 
                 <div className="flex items-center gap-2">
+                  {/* BOTÃO EXPORTAÇÃO INDIVIDUAL */}
+                  <button
+                    onClick={handleExportSingleChat}
+                    className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition flex items-center gap-1 text-xs border border-slate-200"
+                    title="Baixar Histórico Desta Conversa (.txt)"
+                  >
+                    <Download className="w-3.5 h-3.5 text-slate-500" />
+                    <span className="hidden lg:inline text-[11px]">Exportar Chat</span>
+                  </button>
+
                   <button 
                     onClick={toggleAiStatus}
                     className={currentContact.status === 'with_ai' ? 'px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300' : 'px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition bg-purple-100 text-purple-800 hover:bg-purple-200 border border-purple-300'}
@@ -641,7 +752,6 @@ export default function App() {
                   </button>
                 ))}
 
-                {/* BOTÃO PARA EDITAR MODELOS (RECEPÇÃO / POLIANA) */}
                 <button
                   onClick={() => {
                     setEditingReplies(quickReplies);
@@ -752,7 +862,6 @@ export default function App() {
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
             
-            {/* CABEÇALHO */}
             <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between text-white shrink-0">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-lg bg-emerald-600/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
@@ -775,7 +884,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* CONTEÚDO */}
             <div className="p-6 overflow-y-auto flex-1">
               {!isOperatorAuthenticated ? (
                 <form onSubmit={handleOperatorLogin} className="space-y-4 max-w-sm mx-auto py-4">
@@ -879,19 +987,18 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL 2: INSTRUÇÕES CRÍTICAS DA IA (EXCLUSIVO ADMINISTRADOR) */}
+      {/* MODAL 2: INSTRUÇÕES CRÍTICAS DA IA & EXPORTAÇÃO GERAL (ADMINISTRADOR) */}
       {isSettingsOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col">
             
-            {/* CABEÇALHO */}
             <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between text-white">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-lg bg-purple-600/20 border border-purple-500/40 flex items-center justify-center text-purple-400">
                   <Bot className="w-4 h-4" />
                 </div>
                 <div>
-                  <h2 className="text-sm font-semibold">Configurações Críticas da Marina (IA)</h2>
+                  <h2 className="text-sm font-semibold">Administração da Marina & Auditoria</h2>
                   <p className="text-[11px] text-slate-400">Acesso Estritamente Restrito ao Administrador</p>
                 </div>
               </div>
@@ -907,7 +1014,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* CONTEÚDO */}
             <div className="p-6">
               {!isAdminAuthenticated ? (
                 <form onSubmit={handleAdminLogin} className="space-y-4 max-w-sm mx-auto py-4">
@@ -916,7 +1022,7 @@ export default function App() {
                   </div>
                   <div className="text-center">
                     <h3 className="text-sm font-bold text-slate-100">Área Administrativa Mestre</h3>
-                    <p className="text-xs text-slate-400 mt-1">Exclusivo para o responsável técnico. Altera diretamente o comportamento da IA.</p>
+                    <p className="text-xs text-slate-400 mt-1">Exclusivo para o responsável técnico. Altera diretamente o comportamento da IA e exporta relatórios.</p>
                   </div>
 
                   <div>
@@ -939,51 +1045,119 @@ export default function App() {
                     type="submit"
                     className="w-full bg-purple-600 hover:bg-purple-700 text-white font-medium py-2 rounded-xl text-xs transition flex items-center justify-center gap-1.5"
                   >
-                    <KeyRound className="w-3.5 h-3.5" /> Desbloquear System Instructions
+                    <KeyRound className="w-3.5 h-3.5" /> Desbloquear Painel Mestre
                   </button>
                 </form>
               ) : (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5 text-purple-400" /> System Instructions da Marina
-                    </label>
-                    <span className="text-[11px] text-slate-400">Atualização em tempo real</span>
-                  </div>
-
-                  <textarea 
-                    value={promptText}
-                    onChange={e => setPromptText(e.target.value)}
-                    rows={12}
-                    placeholder="Escreva aqui as instruções de atendimento..."
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3.5 text-xs font-mono text-slate-200 leading-relaxed focus:outline-none focus:border-purple-500 resize-none"
-                  />
-
-                  <div className="flex items-center justify-between pt-2">
-                    <div className="text-[11px] text-slate-400">
-                      {saveSuccess && (
-                        <span className="text-emerald-400 font-semibold flex items-center gap-1">
-                          <Check className="w-3.5 h-3.5" /> Instruções salvas com sucesso no banco!
-                        </span>
-                      )}
+                <div className="space-y-5">
+                  
+                  {/* SEÇÃO 1: SYSTEM INSTRUCTIONS */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-purple-400" /> System Instructions da Marina
+                      </label>
+                      <span className="text-[11px] text-slate-400">Atualização em tempo real</span>
                     </div>
 
-                    <button 
-                      onClick={handleSavePrompt}
-                      disabled={isSavingPrompt}
-                      className="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-medium px-4 py-2 rounded-xl text-xs transition flex items-center gap-1.5"
-                    >
-                      {isSavingPrompt ? (
-                        <>
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin" /> A guardar...
-                        </>
-                      ) : (
-                        <>
-                          <Check className="w-3.5 h-3.5" /> Salvar Alterações
-                        </>
-                      )}
-                    </button>
+                    <textarea 
+                      value={promptText}
+                      onChange={e => setPromptText(e.target.value)}
+                      rows={10}
+                      placeholder="Escreva aqui as instruções de atendimento..."
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3.5 text-xs font-mono text-slate-200 leading-relaxed focus:outline-none focus:border-purple-500 resize-none"
+                    />
+
+                    <div className="flex items-center justify-between pt-1">
+                      <div className="text-[11px] text-slate-400">
+                        {saveSuccess && (
+                          <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                            <Check className="w-3.5 h-3.5" /> Instruções salvas com sucesso no banco!
+                          </span>
+                        )}
+                      </div>
+
+                      <button 
+                        onClick={handleSavePrompt}
+                        disabled={isSavingPrompt}
+                        className="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-medium px-4 py-1.5 rounded-xl text-xs transition flex items-center gap-1.5"
+                      >
+                        {isSavingPrompt ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" /> A guardar...
+                          </>
+                        ) : (
+                          <>
+                            <Check className="w-3.5 h-3.5" /> Salvar Instruções
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
+
+                  {/* SEÇÃO 2: EXPORTAÇÃO DE DADOS PARA AUDITORIA (CSV) */}
+                  <div className="border-t border-slate-800 pt-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <h4 className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                          <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" /> Exportação Consolidada de Atendimentos
+                        </h4>
+                        <p className="text-[11px] text-slate-400">Baixe um arquivo CSV com as mensagens, remetentes e triagens para análise externa.</p>
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-400">Período:</span>
+                        <div className="flex gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setExportDays('7')}
+                            className={`px-2 py-1 rounded text-[11px] font-medium transition ${
+                              exportDays === '7' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            7 dias
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setExportDays('30')}
+                            className={`px-2 py-1 rounded text-[11px] font-medium transition ${
+                              exportDays === '30' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            30 dias
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setExportDays('all')}
+                            className={`px-2 py-1 rounded text-[11px] font-medium transition ${
+                              exportDays === 'all' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            Tudo
+                          </button>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={handleExportAllMessagesCSV}
+                        disabled={isExporting}
+                        className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-medium px-3.5 py-1.5 rounded-lg text-xs transition flex items-center gap-1.5 shrink-0"
+                      >
+                        {isExporting ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Gerando CSV...
+                          </>
+                        ) : (
+                          <>
+                            <Download className="w-3.5 h-3.5" /> Baixar Planilha CSV
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
                 </div>
               )}
             </div>
