@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Search, Bot, CalendarCheck, Send, AlertCircle, Copy, Sparkles, RefreshCw,
   Settings, Lock, KeyRound, Check, X, ShieldAlert, Clock, MessageSquareQuote, 
-  Edit3, Download, FileSpreadsheet
+  Edit3, Download, FileSpreadsheet, LogOut
 } from 'lucide-react';
 import { supabase } from './supabase';
 
@@ -347,6 +347,18 @@ export default function App() {
     setTimeout(() => setTemplatesSaveSuccess(false), 3000);
   };
 
+  // FUNÇÃO DE LOGOUT GERAL
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.error('Erro ao encerrar sessão Supabase:', err);
+    }
+    localStorage.clear();
+    sessionStorage.clear();
+    window.location.reload();
+  };
+
   // EXPORTAÇÃO INDIVIDUAL (CHAT ATUAL EM TXT)
   const handleExportSingleChat = () => {
     if (!currentContact || messages.length === 0) return;
@@ -416,7 +428,6 @@ export default function App() {
         return;
       }
 
-      // Montar CSV com cabeçalho
       const headers = ['Data_Hora', 'Paciente_Nome', 'Telefone', 'Status_Atual', 'Remetente', 'Motivo_Triagem', 'Modalidade', 'Mensagem'];
       
       const rows = data.map((item: any) => {
@@ -467,12 +478,12 @@ export default function App() {
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 bg-emerald-950/60 border border-emerald-800/60 px-3 py-1 rounded-full text-xs text-emerald-400">
+        <div className="flex items-center gap-3">
+          <div className="hidden sm:flex items-center gap-2 bg-emerald-950/60 border border-emerald-800/60 px-3 py-1 rounded-full text-xs text-emerald-400">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
             Supabase Conectado
           </div>
-          <div className="text-xs text-slate-400 border-l border-slate-800 pl-4 flex items-center gap-2">
+          <div className="text-xs text-slate-400 border-l border-slate-800 pl-3 flex items-center gap-2">
             <span>Operador: <strong>Poliana</strong></span>
           </div>
 
@@ -487,6 +498,16 @@ export default function App() {
           >
             <Settings className="w-4 h-4 text-emerald-400" />
             <span className="hidden md:inline">Instruções IA</span>
+          </button>
+
+          {/* BOTÃO DE LOGOUT */}
+          <button 
+            onClick={handleLogout}
+            className="p-1.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 hover:text-rose-100 transition flex items-center gap-1 text-xs border border-rose-800/50"
+            title="Encerrar Sessão / Logout"
+          >
+            <LogOut className="w-4 h-4" />
+            <span className="hidden md:inline">Sair</span>
           </button>
         </div>
       </header>
@@ -677,7 +698,6 @@ export default function App() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {/* BOTÃO EXPORTAÇÃO INDIVIDUAL */}
                   <button
                     onClick={handleExportSingleChat}
                     className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition flex items-center gap-1 text-xs border border-slate-200"
