@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Search, Bot, CalendarCheck, Send, AlertCircle, Copy, Sparkles, RefreshCw,
   Settings, Lock, KeyRound, Check, X, ShieldAlert, Clock, MessageSquareQuote, 
-  Edit3, Download, FileSpreadsheet, LogOut
+  Edit3, Download, FileSpreadsheet, LogOut, Mail
 } from 'lucide-react';
 import { supabase } from './supabase';
 
@@ -84,6 +84,15 @@ const DEFAULT_QUICK_REPLIES: QuickReply[] = [
 ];
 
 export default function App() {
+  // Autenticação Geral do Supabase
+  const [session, setSession] = useState<any>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [emailInput, setEmailInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  // Estados Operacionais do Painel
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [selectedId, setSelectedId] = useState<string>('');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -114,6 +123,44 @@ export default function App() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [exportDays, setExportDays] = useState<'7' | '30' | 'all'>('7');
   const [isExporting, setIsExporting] = useState(false);
+
+  // Monitora a Sessão Inicial do Supabase Auth
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setAuthLoading(false);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      setAuthLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError('');
+    setIsLoggingIn(true);
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email: emailInput.trim(),
+      password: passwordInput,
+    });
+
+    if (error) {
+      setLoginError(error.message === 'Invalid login credentials' 
+        ? 'Email ou senha incorretos.' 
+        : 'Erro ao autenticar: ' + error.message);
+    }
+    setIsLoggingIn(false);
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setSession(null);
+  };
 
   const fetchContacts = async () => {
     const { data, error } = await supabase
@@ -170,6 +217,8 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (!session) return;
+
     fetchContacts();
     fetchQuickReplies();
 
@@ -200,15 +249,15 @@ export default function App() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [selectedId]);
+  }, [session, selectedId]);
 
   useEffect(() => {
-    if (selectedId) {
+    if (session && selectedId) {
       fetchMessages(selectedId);
       const contact = contacts.find((c) => c.id === selectedId);
       if (contact) setNotes(contact.internal_notes || '');
     }
-  }, [selectedId]);
+  }, [session, selectedId]);
 
   const currentContact = contacts.find((c) => c.id === selectedId);
 
@@ -347,19 +396,6 @@ export default function App() {
     setTimeout(() => setTemplatesSaveSuccess(false), 3000);
   };
 
-  // FUNÇÃO DE LOGOUT GERAL
-  const handleLogout = async () => {
-    try {
-      await supabase.auth.signOut();
-    } catch (err) {
-      console.error('Erro ao encerrar sessão Supabase:', err);
-    }
-    localStorage.clear();
-    sessionStorage.clear();
-    window.location.reload();
-  };
-
-  // EXPORTAÇÃO INDIVIDUAL (CHAT ATUAL EM TXT)
   const handleExportSingleChat = () => {
     if (!currentContact || messages.length === 0) return;
 
@@ -391,7 +427,6 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
-  // EXPORTAÇÃO GERAL (CSV COMPLETO PARA AUDITORIA/ANÁLISE)
   const handleExportAllMessagesCSV = async () => {
     setIsExporting(true);
 
@@ -463,6 +498,89 @@ export default function App() {
     }
   };
 
+  // Carregamento de Inicialização
+  if (authLoading) {
+    return (
+      <div className="h-screen w-screen bg-slate-950 flex items-center justify-center text-slate-400 text-xs">
+        <RefreshCw className="w-5 h-5 animate-spin text-emerald-500 mr-2" />
+        Carregando painel de atendimento...
+      </div>
+    );
+  }
+
+  // TELA DE LOGIN DE ENTRADA (SE NÃO HOUVER SESSÃO ATIVA)
+  if (!session) {
+    return (
+      <div className="h-screen w-screen bg-slate-950 flex items-center justify-center p-4">
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm p-6 shadow-2xl space-y-5">
+          <div className="text-center space-y-2">
+            <div className="w-12 h-12 rounded-xl bg-emerald-600/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 font-bold mx-auto text-base">
+              CM
+            </div>
+            <div>
+              <h1 className="text-base font-bold text-white">Dr. Cristiano Miranda</h1>
+              <p className="text-xs text-slate-400">Cardiologia Integrativa • Central de Atendimento</p>
+            </div>
+          </div>
+
+          <form onSubmit={handleLogin} className="space-y-3.5">
+            <div>
+              <label className="text-[11px] font-semibold text-slate-300 block mb-1">Email</label>
+              <div className="relative">
+                <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+                <input 
+                  type="email"
+                  value={emailInput}
+                  onChange={e => setEmailInput(e.target.value)}
+                  placeholder="seu-email@clinica.com"
+                  required
+                  autoFocus
+                  className="w-full pl-9 pr-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[11px] font-semibold text-slate-300 block mb-1">Senha</label>
+              <div className="relative">
+                <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+                <input 
+                  type="password"
+                  value={passwordInput}
+                  onChange={e => setPasswordInput(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                  className="w-full pl-9 pr-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+            </div>
+
+            {loginError && (
+              <p className="text-rose-400 text-xs flex items-center gap-1.5 pt-1">
+                <ShieldAlert className="w-4 h-4 shrink-0" /> {loginError}
+              </p>
+            )}
+
+            <button 
+              type="submit"
+              disabled={isLoggingIn}
+              className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl text-xs transition flex items-center justify-center gap-2 mt-2"
+            >
+              {isLoggingIn ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" /> Entrando...
+                </>
+              ) : (
+                'Acessar Painel'
+              )}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  // PAINEL COMPLETO (RENDERIZADO QUANDO AUTENTICADO)
   return (
     <div className="h-screen w-screen flex flex-col bg-slate-900 text-slate-800 antialiased overflow-hidden font-sans">
       
@@ -484,7 +602,7 @@ export default function App() {
             Supabase Conectado
           </div>
           <div className="text-xs text-slate-400 border-l border-slate-800 pl-3 flex items-center gap-2">
-            <span>Operador: <strong>Poliana</strong></span>
+            <span>Operador: <strong>{session.user?.email || 'Poliana'}</strong></span>
           </div>
 
           {/* BOTÃO DE ACESSO CRÍTICO: INSTRUÇÕES IA & EXPORTAÇÃO */}
