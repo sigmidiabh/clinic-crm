@@ -96,15 +96,18 @@ export default function App() {
   // Estados dos Modelos Rápidos
   const [quickReplies, setQuickReplies] = useState<QuickReply[]>(DEFAULT_QUICK_REPLIES);
   const [isTemplatesModalOpen, setIsTemplatesModalOpen] = useState(false);
+  const [isOperatorAuthenticated, setIsOperatorAuthenticated] = useState(false);
+  const [operatorPasswordInput, setOperatorPasswordInput] = useState('');
+  const [operatorPasswordError, setOperatorPasswordError] = useState('');
   const [editingReplies, setEditingReplies] = useState<QuickReply[]>([]);
   const [isSavingTemplates, setIsSavingTemplates] = useState(false);
   const [templatesSaveSuccess, setTemplatesSaveSuccess] = useState(false);
 
-  // Estados da Área de Administração do Prompt
+  // Estados da Área de Administração Crítica (System Prompt)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
-  const [passwordInput, setPasswordInput] = useState('');
-  const [passwordError, setPasswordError] = useState('');
+  const [adminPasswordInput, setAdminPasswordInput] = useState('');
+  const [adminPasswordError, setAdminPasswordError] = useState('');
   const [promptText, setPromptText] = useState('');
   const [isSavingPrompt, setIsSavingPrompt] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -267,9 +270,10 @@ export default function App() {
     setContacts(contacts.map(c => c.id === currentContact.id ? { ...c, status: 'scheduled' } : c));
   };
 
-  const handleAdminLogin = async (e: React.FormEvent, onSuccessCallback?: () => void) => {
+  // Login exclusivo para System Instructions (Admin Mestre)
+  const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setPasswordError('');
+    setAdminPasswordError('');
 
     const { data } = await supabase
       .from('clinic_settings')
@@ -277,16 +281,32 @@ export default function App() {
       .eq('key', 'admin_password')
       .single();
 
-    if (data && data.value === passwordInput) {
+    if (data && data.value === adminPasswordInput) {
       setIsAdminAuthenticated(true);
-      setPasswordInput('');
-      if (onSuccessCallback) {
-        onSuccessCallback();
-      } else {
-        await loadPromptSettings();
-      }
+      setAdminPasswordInput('');
+      await loadPromptSettings();
     } else {
-      setPasswordError('Senha incorreta. Tente novamente.');
+      setAdminPasswordError('Senha de administrador incorreta.');
+    }
+  };
+
+  // Login exclusivo para Respostas Rápidas (Operador ou Admin)
+  const handleOperatorLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setOperatorPasswordError('');
+
+    const { data: settings } = await supabase
+      .from('clinic_settings')
+      .select('key, value')
+      .in('key', ['operator_password', 'admin_password']);
+
+    const validPasswords = settings?.map(s => s.value) || [];
+
+    if (validPasswords.includes(operatorPasswordInput)) {
+      setIsOperatorAuthenticated(true);
+      setOperatorPasswordInput('');
+    } else {
+      setOperatorPasswordError('Senha incorreta. Tente novamente.');
     }
   };
 
@@ -352,14 +372,14 @@ export default function App() {
             <span>Operador: <strong>Poliana</strong></span>
           </div>
 
-          {/* BOTÃO DE ACESSO À ADMINISTRAÇÃO */}
+          {/* BOTÃO DE ACESSO CRÍTICO: INSTRUÇÕES IA */}
           <button 
             onClick={() => {
               setIsSettingsOpen(true);
               if (isAdminAuthenticated) loadPromptSettings();
             }}
             className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition flex items-center gap-1.5 text-xs border border-slate-700"
-            title="Configurações de IA (Administrador)"
+            title="Instruções Críticas da Marina (Acesso Restrito do Administrador)"
           >
             <Settings className="w-4 h-4 text-emerald-400" />
             <span className="hidden md:inline">Instruções IA</span>
@@ -605,7 +625,7 @@ export default function App() {
                 ))}
               </div>
 
-              {/* ATALHOS RÁPIDOS DINÂMICOS DO BANCO */}
+              {/* ATALHOS RÁPIDOS DINÂMICOS */}
               <div className="bg-slate-50 border-t border-slate-200 px-4 py-2 flex items-center gap-2 overflow-x-auto shrink-0">
                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider shrink-0 flex items-center gap-1">
                   <MessageSquareQuote className="w-3 h-3 text-emerald-600" /> Atalhos:
@@ -621,14 +641,14 @@ export default function App() {
                   </button>
                 ))}
 
-                {/* BOTÃO PARA EDITAR OS MODELOS */}
+                {/* BOTÃO PARA EDITAR MODELOS (RECEPÇÃO / POLIANA) */}
                 <button
                   onClick={() => {
                     setEditingReplies(quickReplies);
                     setIsTemplatesModalOpen(true);
                   }}
-                  className="p-1 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition ml-auto shrink-0"
-                  title="Editar Modelos de Mensagem"
+                  className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition ml-auto shrink-0"
+                  title="Editar Modelos de Mensagens (Acesso da Operadora)"
                 >
                   <Edit3 className="w-3.5 h-3.5" />
                 </button>
@@ -727,7 +747,7 @@ export default function App() {
 
       </div>
 
-      {/* MODAL DE EDIÇÃO DOS MODELOS DE RESPOSTAS RÁPIDAS */}
+      {/* MODAL 1: EDIÇÃO DOS MODELOS DE RESPOSTAS RÁPIDAS (OPERADOR) */}
       {isTemplatesModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -740,13 +760,14 @@ export default function App() {
                 </div>
                 <div>
                   <h2 className="text-sm font-semibold">Editar Modelos de Mensagens</h2>
-                  <p className="text-[11px] text-slate-400">Respostas rápidas e gatilhos de follow-up</p>
+                  <p className="text-[11px] text-slate-400">Acesso da Equipe de Atendimento</p>
                 </div>
               </div>
               <button 
                 onClick={() => {
                   setIsTemplatesModalOpen(false);
-                  setPasswordError('');
+                  setOperatorPasswordInput('');
+                  setOperatorPasswordError('');
                 }}
                 className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
               >
@@ -756,28 +777,28 @@ export default function App() {
 
             {/* CONTEÚDO */}
             <div className="p-6 overflow-y-auto flex-1">
-              {!isAdminAuthenticated ? (
-                <form onSubmit={(e) => handleAdminLogin(e, () => {})} className="space-y-4 max-w-sm mx-auto py-4">
+              {!isOperatorAuthenticated ? (
+                <form onSubmit={handleOperatorLogin} className="space-y-4 max-w-sm mx-auto py-4">
                   <div className="w-12 h-12 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center mx-auto text-emerald-400">
                     <Lock className="w-6 h-6" />
                   </div>
                   <div className="text-center">
-                    <h3 className="text-sm font-bold text-slate-100">Área Protegida</h3>
-                    <p className="text-xs text-slate-400 mt-1">Introduza a senha de administrador para editar os modelos.</p>
+                    <h3 className="text-sm font-bold text-slate-100">Área de Atendimento</h3>
+                    <p className="text-xs text-slate-400 mt-1">Introduza a senha de operador para editar os modelos rápidos.</p>
                   </div>
 
                   <div>
                     <input 
                       type="password"
-                      value={passwordInput}
-                      onChange={e => setPasswordInput(e.target.value)}
-                      placeholder="Senha de acesso..."
+                      value={operatorPasswordInput}
+                      onChange={e => setOperatorPasswordInput(e.target.value)}
+                      placeholder="Senha do operador..."
                       autoFocus
                       className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
                     />
-                    {passwordError && (
+                    {operatorPasswordError && (
                       <p className="text-rose-400 text-[11px] mt-1.5 flex items-center gap-1">
-                        <ShieldAlert className="w-3.5 h-3.5" /> {passwordError}
+                        <ShieldAlert className="w-3.5 h-3.5" /> {operatorPasswordError}
                       </p>
                     )}
                   </div>
@@ -786,13 +807,13 @@ export default function App() {
                     type="submit"
                     className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 rounded-xl text-xs transition flex items-center justify-center gap-1.5"
                   >
-                    <KeyRound className="w-3.5 h-3.5" /> Desbloquear Editor
+                    <KeyRound className="w-3.5 h-3.5" /> Desbloquear Modelos
                   </button>
                 </form>
               ) : (
                 <div className="space-y-4">
                   <p className="text-xs text-slate-400 bg-slate-800/50 p-3 rounded-lg border border-slate-800">
-                    💡 Dica: Use a tag <strong>{'{nome}'}</strong> no texto para inserir automaticamente o primeiro nome do paciente ao clicar no atalho.
+                    💡 Dica: Use a tag <strong>{'{nome}'}</strong> no texto para inserir automaticamente o primeiro nome do paciente.
                   </p>
 
                   <div className="space-y-4">
@@ -858,26 +879,27 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL ADMINISTRATIVO DE INSTRUÇÕES DA IA COM SENHA */}
+      {/* MODAL 2: INSTRUÇÕES CRÍTICAS DA IA (EXCLUSIVO ADMINISTRADOR) */}
       {isSettingsOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col">
             
-            {/* CABEÇALHO DO MODAL */}
+            {/* CABEÇALHO */}
             <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between text-white">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-lg bg-purple-600/20 border border-purple-500/40 flex items-center justify-center text-purple-400">
                   <Bot className="w-4 h-4" />
                 </div>
                 <div>
-                  <h2 className="text-sm font-semibold">Configurações da Marina (IA)</h2>
-                  <p className="text-[11px] text-slate-400">Painel Restrito do Administrador</p>
+                  <h2 className="text-sm font-semibold">Configurações Críticas da Marina (IA)</h2>
+                  <p className="text-[11px] text-slate-400">Acesso Estritamente Restrito ao Administrador</p>
                 </div>
               </div>
               <button 
                 onClick={() => {
                   setIsSettingsOpen(false);
-                  setPasswordError('');
+                  setAdminPasswordInput('');
+                  setAdminPasswordError('');
                 }}
                 className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
               >
@@ -885,44 +907,42 @@ export default function App() {
               </button>
             </div>
 
-            {/* CONTEÚDO DO MODAL */}
+            {/* CONTEÚDO */}
             <div className="p-6">
               {!isAdminAuthenticated ? (
-                /* ECRÃ DE LOGIN COM SENHA */
-                <form onSubmit={(e) => handleAdminLogin(e)} className="space-y-4 max-w-sm mx-auto py-4">
-                  <div className="w-12 h-12 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center mx-auto text-emerald-400">
+                <form onSubmit={handleAdminLogin} className="space-y-4 max-w-sm mx-auto py-4">
+                  <div className="w-12 h-12 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center mx-auto text-purple-400">
                     <Lock className="w-6 h-6" />
                   </div>
                   <div className="text-center">
-                    <h3 className="text-sm font-bold text-slate-100">Área Protegida</h3>
-                    <p className="text-xs text-slate-400 mt-1">Introduza a senha de administrador para editar as diretrizes da secretária virtual.</p>
+                    <h3 className="text-sm font-bold text-slate-100">Área Administrativa Mestre</h3>
+                    <p className="text-xs text-slate-400 mt-1">Exclusivo para o responsável técnico. Altera diretamente o comportamento da IA.</p>
                   </div>
 
                   <div>
                     <input 
                       type="password"
-                      value={passwordInput}
-                      onChange={e => setPasswordInput(e.target.value)}
-                      placeholder="Senha de acesso..."
+                      value={adminPasswordInput}
+                      onChange={e => setAdminPasswordInput(e.target.value)}
+                      placeholder="Senha do administrador mestre..."
                       autoFocus
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
                     />
-                    {passwordError && (
+                    {adminPasswordError && (
                       <p className="text-rose-400 text-[11px] mt-1.5 flex items-center gap-1">
-                        <ShieldAlert className="w-3.5 h-3.5" /> {passwordError}
+                        <ShieldAlert className="w-3.5 h-3.5" /> {adminPasswordError}
                       </p>
                     )}
                   </div>
 
                   <button 
                     type="submit"
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 rounded-xl text-xs transition flex items-center justify-center gap-1.5"
+                    className="w-full bg-purple-600 hover:bg-purple-700 text-white font-medium py-2 rounded-xl text-xs transition flex items-center justify-center gap-1.5"
                   >
-                    <KeyRound className="w-3.5 h-3.5" /> Desbloquear Editor
+                    <KeyRound className="w-3.5 h-3.5" /> Desbloquear System Instructions
                   </button>
                 </form>
               ) : (
-                /* EDITOR DO SYSTEM INSTRUCTIONS */
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
