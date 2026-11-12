@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Search, Bot, CalendarCheck, Send, AlertCircle, Copy, Sparkles, RefreshCw,
   Settings, Lock, KeyRound, Check, X, ShieldAlert, Clock, MessageSquareQuote, 
-  Edit3, Download, FileSpreadsheet, LogOut, Mail
+  Edit3, Download, FileSpreadsheet, LogOut, Mail, Volume2, VolumeX
 } from 'lucide-react';
 import { supabase } from './supabase';
 
@@ -83,7 +83,6 @@ const DEFAULT_QUICK_REPLIES: QuickReply[] = [
   }
 ];
 
-// Normaliza o remetente vindo do banco para evitar divergências entre 'bot', 'ai', 'assistant', etc.
 function getSenderRole(sender?: string): 'patient' | 'bot' | 'agent' {
   const normalized = (sender || '').toLowerCase().trim();
   if (['bot', 'ai', 'assistant', 'marina', 'ia'].includes(normalized)) {
@@ -95,6 +94,46 @@ function getSenderRole(sender?: string): 'patient' | 'bot' | 'agent' {
   return 'patient';
 }
 
+// Gera um sinal sonoro duplo sutil e agradável via Web Audio API (sem depender de arquivos externos)
+function playSubtleNotificationChime() {
+  try {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) return;
+
+    const ctx = new AudioContextClass();
+    const now = ctx.currentTime;
+
+    const playTone = (freq: number, startTime: number, duration: number) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, startTime);
+
+      // Envelope suave de ataque e decaimento para não assustar
+      gain.gain.setValueAtTime(0.0001, startTime);
+      gain.gain.exponentialRampToValueAtTime(0.12, startTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(startTime);
+      osc.stop(startTime + duration);
+    };
+
+    // Duas notas suaves ascendentes (Lá5 -> Dó#6)
+    playTone(880, now, 0.25);
+    playTone(1108.73, now + 0.14, 0.35);
+
+    setTimeout(() => {
+      ctx.close().catch(() => {});
+    }, 800);
+  } catch (err) {
+    console.warn('Áudio bloqueado pelo navegador até a primeira interação:', err);
+  }
+}
+
 export default function App() {
   // Autenticação Geral do Supabase
   const [session, setSession] = useState<any>(null);
@@ -103,6 +142,14 @@ export default function App() {
   const [passwordInput, setPasswordInput] = useState('');
   const [loginError, setLoginError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  // Controle de Alerta Sonoro
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
+  const soundEnabledRef = useRef<boolean>(true);
+
+  useEffect(() => {
+    soundEnabledRef.current = soundEnabled;
+  }, [soundEnabled]);
 
   // Estados Operacionais do Painel
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -249,6 +296,13 @@ export default function App() {
         { event: 'INSERT', schema: 'public', table: 'messages' },
         (payload) => {
           const newMsg = payload.new as Message;
+          const role = getSenderRole(newMsg.sender);
+
+          // Toca o sinal sonoro sutil apenas quando chegar mensagem de um paciente
+          if (role === 'patient' && soundEnabledRef.current) {
+            playSubtleNotificationChime();
+          }
+
           if (newMsg.contact_id === selectedId) {
             setMessages((prev) => {
               if (prev.some((m) => m.id === newMsg.id)) return prev;
@@ -342,6 +396,15 @@ export default function App() {
     if (!currentContact) return;
     await supabase.from('contacts').update({ status: 'scheduled' }).eq('id', currentContact.id);
     setContacts(contacts.map(c => c.id === currentContact.id ? { ...c, status: 'scheduled' } : c));
+  };
+
+  const handleToggleSound = () => {
+    const nextState = !soundEnabled;
+    setSoundEnabled(nextState);
+    if (nextState) {
+      // Toca uma prévia sutil ao ativar para confirmar o volume e desbloquear o AudioContext
+      playSubtleNotificationChime();
+    }
   };
 
   const handleAdminLogin = async (e: React.FormEvent) => {
@@ -628,6 +691,21 @@ export default function App() {
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
             Supabase Conectado
           </div>
+
+          {/* BOTÃO DE SOM (SINAL SONORO DE NOVA MENSAGEM) */}
+          <button
+            onClick={handleToggleSound}
+            className={`p-1.5 rounded-lg transition flex items-center gap-1.5 text-xs border ${
+              soundEnabled
+                ? 'bg-slate-800 hover:bg-slate-700 text-emerald-400 border-slate-700'
+                : 'bg-slate-800/50 hover:bg-slate-800 text-slate-500 border-slate-800'
+            }`}
+            title={soundEnabled ? 'Alerta sonoro ativado (clique para silenciar)' : 'Alerta sonoro silenciado (clique para ativar)'}
+          >
+            {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+            <span className="hidden lg:inline text-[11px]">{soundEnabled ? 'Som Ativo' : 'Mudo'}</span>
+          </button>
+
           <div className="text-xs text-slate-400 border-l border-slate-800 pl-3 flex items-center gap-2">
             <span>Operador: <strong>{session.user?.email || 'Poliana'}</strong></span>
           </div>
