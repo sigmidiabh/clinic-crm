@@ -10,7 +10,7 @@ interface Message {
   id: string;
   contact_id: string;
   phone: string;
-  sender: 'patient' | 'bot' | 'agent';
+  sender: string;
   text: string;
   created_at: string;
 }
@@ -82,6 +82,18 @@ const DEFAULT_QUICK_REPLIES: QuickReply[] = [
     display_order: 5
   }
 ];
+
+// Normaliza o remetente vindo do banco para evitar divergências entre 'bot', 'ai', 'assistant', etc.
+function getSenderRole(sender?: string): 'patient' | 'bot' | 'agent' {
+  const normalized = (sender || '').toLowerCase().trim();
+  if (['bot', 'ai', 'assistant', 'marina', 'ia'].includes(normalized)) {
+    return 'bot';
+  }
+  if (['agent', 'poliana', 'human', 'attendant', 'secretaria'].includes(normalized)) {
+    return 'agent';
+  }
+  return 'patient';
+}
 
 export default function App() {
   // Autenticação Geral do Supabase
@@ -423,9 +435,11 @@ export default function App() {
 
     messages.forEach((msg) => {
       const time = new Date(msg.created_at).toLocaleString('pt-BR');
+      const role = getSenderRole(msg.sender);
+      
       let senderLabel = '[PACIENTE]';
-      if (msg.sender === 'bot') senderLabel = '[MARINA - IA]';
-      if (msg.sender === 'agent') senderLabel = '[POLIANA - SECRETÁRIA]';
+      if (role === 'bot') senderLabel = '[MARINA - IA]';
+      if (role === 'agent') senderLabel = '[POLIANA - SECRETÁRIA]';
 
       content += `${time} - ${senderLabel}:\n${msg.text}\n\n`;
     });
@@ -482,10 +496,11 @@ export default function App() {
         const name = (item.contacts?.name || 'Não identificado').replace(/"/g, '""');
         const phone = item.phone || '';
         const status = item.contacts?.status || '';
+        const role = getSenderRole(item.sender);
         
         let senderRole = 'Paciente';
-        if (item.sender === 'bot') senderRole = 'Marina (IA)';
-        if (item.sender === 'agent') senderRole = 'Poliana (Secretária)';
+        if (role === 'bot') senderRole = 'Marina (IA)';
+        if (role === 'agent') senderRole = 'Poliana (Secretária)';
 
         const intent = (item.contacts?.triage_intent || '').replace(/"/g, '""');
         const modality = (item.contacts?.triage_modality || '').replace(/"/g, '""');
@@ -855,35 +870,38 @@ export default function App() {
               </div>
 
               <div className="flex-1 p-5 overflow-y-auto space-y-3.5">
-                {messages.map(msg => (
-                  <div 
-                    key={msg.id} 
-                    className={msg.sender === 'patient' ? 'flex justify-start' : 'flex justify-end'}
-                  >
-                    <div className={
-                      msg.sender === 'patient' 
-                        ? 'max-w-md p-3 rounded-2xl text-xs leading-relaxed shadow-sm bg-white text-slate-800 rounded-tl-none border border-slate-100' 
-                        : msg.sender === 'bot'
-                        ? 'max-w-md p-3 rounded-2xl text-xs leading-relaxed shadow-sm bg-purple-50 border border-purple-200 text-slate-800 rounded-tr-none'
-                        : 'max-w-md p-3 rounded-2xl text-xs leading-relaxed shadow-sm bg-emerald-600 text-white rounded-tr-none'
-                    }>
-                      {msg.sender === 'bot' && (
-                        <div className="flex items-center gap-1 text-[10px] font-bold text-purple-700 uppercase tracking-wider mb-1">
-                          <Sparkles className="w-3 h-3" /> Marina (IA)
-                        </div>
-                      )}
-                      {msg.sender === 'agent' && (
-                        <div className="text-[10px] font-semibold text-emerald-200 uppercase tracking-wider mb-1">
-                          Poliana (Secretária)
-                        </div>
-                      )}
-                      <p className="whitespace-pre-wrap">{msg.text}</p>
-                      <span className={msg.sender === 'agent' ? 'block text-[10px] text-right mt-1 text-emerald-100' : 'block text-[10px] text-right mt-1 text-slate-400'}>
-                        {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
+                {messages.map(msg => {
+                  const role = getSenderRole(msg.sender);
+                  return (
+                    <div 
+                      key={msg.id} 
+                      className={role === 'patient' ? 'flex justify-start' : 'flex justify-end'}
+                    >
+                      <div className={
+                        role === 'patient' 
+                          ? 'max-w-md p-3 rounded-2xl text-xs leading-relaxed shadow-sm bg-white text-slate-800 rounded-tl-none border border-slate-100' 
+                          : role === 'bot'
+                          ? 'max-w-md p-3 rounded-2xl text-xs leading-relaxed shadow-sm bg-purple-50 border border-purple-200 text-slate-800 rounded-tr-none'
+                          : 'max-w-md p-3 rounded-2xl text-xs leading-relaxed shadow-sm bg-emerald-600 text-white rounded-tr-none'
+                      }>
+                        {role === 'bot' && (
+                          <div className="flex items-center gap-1 text-[10px] font-bold text-purple-700 uppercase tracking-wider mb-1">
+                            <Sparkles className="w-3 h-3" /> Marina (IA)
+                          </div>
+                        )}
+                        {role === 'agent' && (
+                          <div className="text-[10px] font-semibold text-emerald-200 uppercase tracking-wider mb-1">
+                            Poliana (Secretária)
+                          </div>
+                        )}
+                        <p className="whitespace-pre-wrap">{msg.text}</p>
+                        <span className={role === 'agent' ? 'block text-[10px] text-right mt-1 text-emerald-100' : 'block text-[10px] text-right mt-1 text-slate-400'}>
+                          {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
                 <div ref={messagesEndRef} />
               </div>
 
