@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Search, Bot, CalendarCheck, Send, AlertCircle, Copy, Sparkles, RefreshCw,
   Settings, Lock, KeyRound, Check, X, ShieldAlert, Clock, MessageSquareQuote, 
@@ -103,6 +103,9 @@ export default function App() {
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(true);
 
+  // Referência para rolagem automática do chat
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
   // Estados dos Modelos Rápidos
   const [quickReplies, setQuickReplies] = useState<QuickReply[]>(DEFAULT_QUICK_REPLIES);
   const [isTemplatesModalOpen, setIsTemplatesModalOpen] = useState(false);
@@ -138,6 +141,11 @@ export default function App() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // Rolagem automática para a última mensagem
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -223,13 +231,17 @@ export default function App() {
     fetchQuickReplies();
 
     const channel = supabase
-      .channel('schema-db-changes')
+      .channel('realtime-clinic-crm')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'messages' },
+        { event: 'INSERT', schema: 'public', table: 'messages' },
         (payload) => {
-          if (payload.new && (payload.new as Message).contact_id === selectedId) {
-            setMessages((prev) => [...prev, payload.new as Message]);
+          const newMsg = payload.new as Message;
+          if (newMsg.contact_id === selectedId) {
+            setMessages((prev) => {
+              if (prev.some((m) => m.id === newMsg.id)) return prev;
+              return [...prev, newMsg];
+            });
           }
           fetchContacts();
         }
@@ -872,6 +884,7 @@ export default function App() {
                     </div>
                   </div>
                 ))}
+                <div ref={messagesEndRef} />
               </div>
 
               {/* ATALHOS RÁPIDOS DINÂMICOS */}
