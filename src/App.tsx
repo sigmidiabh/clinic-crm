@@ -94,7 +94,6 @@ function getSenderRole(sender?: string): 'patient' | 'bot' | 'agent' {
   return 'patient';
 }
 
-// Gera um sinal sonoro duplo sutil e agradável via Web Audio API (sem depender de arquivos externos)
 function playSubtleNotificationChime() {
   try {
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
@@ -110,7 +109,6 @@ function playSubtleNotificationChime() {
       osc.type = 'sine';
       osc.frequency.setValueAtTime(freq, startTime);
 
-      // Envelope suave de ataque e decaimento para não assustar
       gain.gain.setValueAtTime(0.0001, startTime);
       gain.gain.exponentialRampToValueAtTime(0.12, startTime + 0.02);
       gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
@@ -122,7 +120,6 @@ function playSubtleNotificationChime() {
       osc.stop(startTime + duration);
     };
 
-    // Duas notas suaves ascendentes (Lá5 -> Dó#6)
     playTone(880, now, 0.25);
     playTone(1108.73, now + 0.14, 0.35);
 
@@ -154,6 +151,7 @@ export default function App() {
   // Estados Operacionais do Painel
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [selectedId, setSelectedId] = useState<string>('');
+  const selectedIdRef = useRef<string>('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [filter, setFilter] = useState<'all' | 'waiting' | 'in_progress' | 'ai'>('all');
   const [cadenceFilter, setCadenceFilter] = useState<'all' | 'followup_3d' | 'followup_7d' | 'inativo'>('all');
@@ -161,6 +159,10 @@ export default function App() {
   const [inputText, setInputText] = useState('');
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
 
   // Referência para rolagem automática do chat
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -229,23 +231,8 @@ export default function App() {
     setSession(null);
   };
 
-  const fetchContacts = async () => {
-    const { data, error } = await supabase
-      .from('vw_contacts_cadence')
-      .select('*')
-      .order('last_message_at', { ascending: false });
-
-    if (!error && data) {
-      setContacts(data as Contact[]);
-      if (data.length > 0 && !selectedId) {
-        setSelectedId(data[0].id);
-        setNotes(data[0].internal_notes || '');
-      }
-    }
-    setLoading(false);
-  };
-
   const fetchMessages = async (contactId: string) => {
+    if (!contactId) return;
     const { data, error } = await supabase
       .from('messages')
       .select('*')
@@ -255,6 +242,38 @@ export default function App() {
     if (!error && data) {
       setMessages(data as Message[]);
     }
+  };
+
+  const fetchContacts = async () => {
+    const { data, error } = await supabase
+      .from('vw_contacts_cadence')
+      .select('*')
+      .order('last_message_at', { ascending: false });
+
+    if (!error && data) {
+      const typedData = data as Contact[];
+      setContacts(typedData);
+
+      if (typedData.length > 0) {
+        const activeId = selectedIdRef.current;
+        const currentStillExists = typedData.some((c) => c.id === activeId);
+
+        if (!activeId || !currentStillExists) {
+          const firstContact = typedData[0];
+          setSelectedId(firstContact.id);
+          selectedIdRef.current = firstContact.id;
+          setNotes(firstContact.internal_notes || '');
+          await fetchMessages(firstContact.id);
+        } else {
+          await fetchMessages(activeId);
+        }
+      } else {
+        setSelectedId('');
+        selectedIdRef.current = '';
+        setMessages([]);
+      }
+    }
+    setLoading(false);
   };
 
   const loadPromptSettings = async () => {
@@ -298,12 +317,11 @@ export default function App() {
           const newMsg = payload.new as Message;
           const role = getSenderRole(newMsg.sender);
 
-          // Toca o sinal sonoro sutil apenas quando chegar mensagem de um paciente
           if (role === 'patient' && soundEnabledRef.current) {
             playSubtleNotificationChime();
           }
 
-          if (newMsg.contact_id === selectedId) {
+          if (newMsg.contact_id === selectedIdRef.current) {
             setMessages((prev) => {
               if (prev.some((m) => m.id === newMsg.id)) return prev;
               return [...prev, newMsg];
@@ -327,7 +345,7 @@ export default function App() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [session, selectedId]);
+  }, [session]);
 
   useEffect(() => {
     if (session && selectedId) {
@@ -402,7 +420,6 @@ export default function App() {
     const nextState = !soundEnabled;
     setSoundEnabled(nextState);
     if (nextState) {
-      // Toca uma prévia sutil ao ativar para confirmar o volume e desbloquear o AudioContext
       playSubtleNotificationChime();
     }
   };
@@ -588,7 +605,6 @@ export default function App() {
     }
   };
 
-  // Carregamento de Inicialização
   if (authLoading) {
     return (
       <div className="h-screen w-screen bg-slate-950 flex items-center justify-center text-slate-400 text-xs">
@@ -598,7 +614,6 @@ export default function App() {
     );
   }
 
-  // TELA DE LOGIN DE ENTRADA (SE NÃO HOUVER SESSÃO ATIVA)
   if (!session) {
     return (
       <div className="h-screen w-screen bg-slate-950 flex items-center justify-center p-4">
@@ -670,7 +685,6 @@ export default function App() {
     );
   }
 
-  // PAINEL COMPLETO (RENDERIZADO QUANDO AUTENTICADO)
   return (
     <div className="h-screen w-screen flex flex-col bg-slate-900 text-slate-800 antialiased overflow-hidden font-sans">
       
@@ -692,7 +706,6 @@ export default function App() {
             Supabase Conectado
           </div>
 
-          {/* BOTÃO DE SOM (SINAL SONORO DE NOVA MENSAGEM) */}
           <button
             onClick={handleToggleSound}
             className={`p-1.5 rounded-lg transition flex items-center gap-1.5 text-xs border ${
@@ -710,7 +723,6 @@ export default function App() {
             <span>Operador: <strong>{session.user?.email || 'Poliana'}</strong></span>
           </div>
 
-          {/* BOTÃO DE ACESSO CRÍTICO: INSTRUÇÕES IA & EXPORTAÇÃO */}
           <button 
             onClick={() => {
               setIsSettingsOpen(true);
@@ -723,7 +735,6 @@ export default function App() {
             <span className="hidden md:inline">Instruções IA</span>
           </button>
 
-          {/* BOTÃO DE LOGOUT */}
           <button 
             onClick={handleLogout}
             className="p-1.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 hover:text-rose-100 transition flex items-center gap-1 text-xs border border-rose-800/50"
