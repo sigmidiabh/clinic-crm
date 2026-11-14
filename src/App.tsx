@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Search, Bot, CalendarCheck, Send, AlertCircle, Copy, Sparkles, RefreshCw,
   Settings, Lock, KeyRound, Check, X, ShieldAlert, Clock, MessageSquareQuote, 
-  Edit3, Download, FileSpreadsheet, LogOut, Mail, Volume2, VolumeX
+  Edit3, Download, FileSpreadsheet, LogOut, Mail, Volume2, VolumeX, Archive
 } from 'lucide-react';
 import { supabase } from './supabase';
 
@@ -19,7 +19,7 @@ interface Contact {
   id: string;
   phone: string;
   name: string;
-  status: 'with_ai' | 'waiting_agent' | 'in_progress' | 'scheduled';
+  status: 'with_ai' | 'waiting_agent' | 'in_progress' | 'scheduled' | 'archived';
   tag: string;
   last_message: string;
   triage_intent: string;
@@ -27,7 +27,8 @@ interface Contact {
   triage_complaint: string;
   reimbursement_notice: boolean;
   internal_notes: string;
-  cadence_stage?: 'recente' | 'followup_3d' | 'followup_7d' | 'inativo' | 'concluido';
+  cadence_stage?: 'recente' | 'gancho_24h' | 'arquivado' | 'concluido';
+  hours_inactive?: number;
   days_inactive?: number;
 }
 
@@ -44,17 +45,17 @@ const DEFAULT_QUICK_REPLIES: QuickReply[] = [
   {
     id: '1',
     slug: 'gancho_clinico',
-    title: 'Gancho Clínico (3-6d)',
+    title: 'Gancho Clínico (24h-48h)',
     category: 'follow_up',
-    content: 'Olá, {nome}! Aqui é a Poliana da equipe do Dr. Cristiano. Como conversamos há alguns dias sobre a sua consulta, queria verificar se ficou alguma dúvida sobre o atendimento ou se precisa de ajuda com relação aos horários.',
+    content: 'Oi, {nome}, tudo bem? Poliana por aqui. O Dr. Cristiano me pediu para verificar se você conseguiu tirar todas as suas dúvidas sobre a consulta integrativa ou se ficou alguma questão sobre o formato do atendimento. Se preferir, estou à disposição!',
     display_order: 1
   },
   {
     id: '2',
     slug: 'desapego_positivo',
-    title: 'Desapego Positivo (7-14d)',
+    title: 'Desapego Positivo (Manual)',
     category: 'follow_up',
-    content: 'Oi, {nome}! Imaginei que sua rotina estivesse corrida ou que tenha optado por adiar a consulta, e não tem problema nenhum. Vou encerrar seu atendimento por aqui para não incomodar. Se quiser retomar o cuidado em outro momento, é só nos chamar!',
+    content: 'Olá, {nome}!\n\nComo não tive seu retorno, imaginei que tenha adiado a busca pela consulta por enquanto, e está tudo bem.\n\nVou arquivar seu contato por aqui para não te incomodar com novas mensagens.\n\nSe em algum momento quiser retomar o cuidado, é só me chamar por este canal.\n\nCuide-se!',
     display_order: 2
   },
   {
@@ -155,7 +156,7 @@ export default function App() {
   const selectedIdRef = useRef<string>('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [filter, setFilter] = useState<'all' | 'waiting' | 'in_progress' | 'ai'>('all');
-  const [cadenceFilter, setCadenceFilter] = useState<'all' | 'followup_3d' | 'followup_7d' | 'inativo'>('all');
+  const [cadenceFilter, setCadenceFilter] = useState<'all' | 'gancho_24h' | 'archived'>('all');
   const [search, setSearch] = useState('');
   const [inputText, setInputText] = useState('');
   const [notes, setNotes] = useState('');
@@ -285,12 +286,12 @@ export default function App() {
         const activeContact = typedData.find((c) => c.id === activeId);
 
         if (!activeId || !activeContact) {
-          const firstContact = typedData[0];
-          setSelectedId(firstContact.id);
-          selectedIdRef.current = firstContact.id;
-          setNotes(firstContact.internal_notes || '');
-          await fetchMessages(firstContact.id, firstContact.phone);
-          setTimeout(() => fetchMessages(firstContact.id, firstContact.phone), 800);
+          const firstActive = typedData.find((c) => c.status !== 'archived') || typedData[0];
+          setSelectedId(firstActive.id);
+          selectedIdRef.current = firstActive.id;
+          setNotes(firstActive.internal_notes || '');
+          await fetchMessages(firstActive.id, firstActive.phone);
+          setTimeout(() => fetchMessages(firstActive.id, firstActive.phone), 800);
         } else {
           await fetchMessages(activeContact.id, activeContact.phone);
         }
@@ -405,17 +406,28 @@ export default function App() {
   const currentContact = contacts.find((c) => c.id === selectedId);
 
   const filteredContacts = contacts.filter((contact) => {
+    const isSearching = search.trim().length > 0;
     const matchesSearch =
       contact.name?.toLowerCase().includes(search.toLowerCase()) ||
       contact.phone?.includes(search) ||
       contact.tag?.toLowerCase().includes(search.toLowerCase());
     if (!matchesSearch) return false;
 
+    // Se o filtro de cadência for "Arquivados (+8d)", exibe exclusivamente os arquivados
+    if (cadenceFilter === 'archived') {
+      return contact.status === 'archived' || contact.cadence_stage === 'arquivado';
+    }
+
+    // Fora da busca textual e fora da aba Arquivados, oculta os contatos já arquivados para manter a fila limpa
+    if (!isSearching && contact.status === 'archived') {
+      return false;
+    }
+
     if (filter === 'waiting' && contact.status !== 'waiting_agent') return false;
     if (filter === 'in_progress' && contact.status !== 'in_progress') return false;
     if (filter === 'ai' && contact.status !== 'with_ai') return false;
 
-    if (cadenceFilter !== 'all' && contact.cadence_stage !== cadenceFilter) return false;
+    if (cadenceFilter === 'gancho_24h' && contact.cadence_stage !== 'gancho_24h') return false;
 
     return true;
   });
@@ -461,6 +473,12 @@ export default function App() {
     if (!currentContact) return;
     await supabase.from('contacts').update({ status: 'scheduled' }).eq('id', currentContact.id);
     setContacts(contacts.map(c => c.id === currentContact.id ? { ...c, status: 'scheduled' } : c));
+  };
+
+  const markAsArchived = async () => {
+    if (!currentContact) return;
+    await supabase.from('contacts').update({ status: 'archived' }).eq('id', currentContact.id);
+    setContacts(contacts.map(c => c.id === currentContact.id ? { ...c, status: 'archived' } : c));
   };
 
   const handleToggleSound = () => {
@@ -812,66 +830,58 @@ export default function App() {
             
             <div className="flex gap-1 overflow-x-auto pb-0.5">
               <button 
-                onClick={() => setFilter('waiting')} 
-                className={filter === 'waiting' ? 'px-2 py-1 rounded-md text-[10px] font-semibold whitespace-nowrap transition bg-amber-600 text-white' : 'px-2 py-1 rounded-md text-[10px] font-semibold whitespace-nowrap transition bg-slate-100 text-slate-600 hover:bg-slate-200'}
+                onClick={() => { setFilter('waiting'); setCadenceFilter('all'); }} 
+                className={filter === 'waiting' && cadenceFilter !== 'archived' ? 'px-2 py-1 rounded-md text-[10px] font-semibold whitespace-nowrap transition bg-amber-600 text-white' : 'px-2 py-1 rounded-md text-[10px] font-semibold whitespace-nowrap transition bg-slate-100 text-slate-600 hover:bg-slate-200'}
               >
                 Aguardando ({contacts.filter(c => c.status === 'waiting_agent').length})
               </button>
               <button 
-                onClick={() => setFilter('in_progress')} 
-                className={filter === 'in_progress' ? 'px-2 py-1 rounded-md text-[10px] font-semibold whitespace-nowrap transition bg-emerald-600 text-white' : 'px-2 py-1 rounded-md text-[10px] font-semibold whitespace-nowrap transition bg-slate-100 text-slate-600 hover:bg-slate-200'}
+                onClick={() => { setFilter('in_progress'); setCadenceFilter('all'); }} 
+                className={filter === 'in_progress' && cadenceFilter !== 'archived' ? 'px-2 py-1 rounded-md text-[10px] font-semibold whitespace-nowrap transition bg-emerald-600 text-white' : 'px-2 py-1 rounded-md text-[10px] font-semibold whitespace-nowrap transition bg-slate-100 text-slate-600 hover:bg-slate-200'}
               >
                 Atendimento ({contacts.filter(c => c.status === 'in_progress').length})
               </button>
               <button 
-                onClick={() => setFilter('ai')} 
-                className={filter === 'ai' ? 'px-2 py-1 rounded-md text-[10px] font-medium whitespace-nowrap transition bg-purple-600 text-white' : 'px-2 py-1 rounded-md text-[10px] font-medium whitespace-nowrap transition bg-slate-100 text-slate-600 hover:bg-slate-200'}
+                onClick={() => { setFilter('ai'); setCadenceFilter('all'); }} 
+                className={filter === 'ai' && cadenceFilter !== 'archived' ? 'px-2 py-1 rounded-md text-[10px] font-medium whitespace-nowrap transition bg-purple-600 text-white' : 'px-2 py-1 rounded-md text-[10px] font-medium whitespace-nowrap transition bg-slate-100 text-slate-600 hover:bg-slate-200'}
               >
                 Marina ({contacts.filter(c => c.status === 'with_ai').length})
               </button>
               <button 
-                onClick={() => setFilter('all')} 
-                className={filter === 'all' ? 'px-2 py-1 rounded-md text-[10px] font-medium whitespace-nowrap transition bg-slate-800 text-white' : 'px-2 py-1 rounded-md text-[10px] font-medium whitespace-nowrap transition bg-slate-100 text-slate-600 hover:bg-slate-200'}
+                onClick={() => { setFilter('all'); setCadenceFilter('all'); }} 
+                className={filter === 'all' && cadenceFilter === 'all' ? 'px-2 py-1 rounded-md text-[10px] font-medium whitespace-nowrap transition bg-slate-800 text-white' : 'px-2 py-1 rounded-md text-[10px] font-medium whitespace-nowrap transition bg-slate-100 text-slate-600 hover:bg-slate-200'}
               >
-                Todos
+                Ativos
               </button>
             </div>
 
-            <div className="flex items-center gap-1 pt-1 border-t border-slate-200/60 overflow-x-auto">
+            <div className="flex items-center gap-1.5 pt-1 border-t border-slate-200/60 overflow-x-auto">
               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider shrink-0 flex items-center gap-0.5">
-                <Clock className="w-2.5 h-2.5" /> Fila:
+                <Clock className="w-2.5 h-2.5" /> Cadência:
               </span>
               <button
-                onClick={() => setCadenceFilter('all')}
-                className={`px-1.5 py-0.5 rounded text-[9px] font-medium transition whitespace-nowrap ${
+                onClick={() => { setCadenceFilter('all'); setFilter('all'); }}
+                className={`px-2 py-0.5 rounded text-[9px] font-medium transition whitespace-nowrap ${
                   cadenceFilter === 'all' ? 'bg-slate-700 text-white font-semibold' : 'text-slate-500 hover:bg-slate-200'
                 }`}
               >
                 Todos
               </button>
               <button
-                onClick={() => setCadenceFilter('followup_3d')}
-                className={`px-1.5 py-0.5 rounded text-[9px] font-medium transition whitespace-nowrap ${
-                  cadenceFilter === 'followup_3d' ? 'bg-blue-600 text-white font-semibold' : 'text-slate-500 hover:bg-blue-50'
+                onClick={() => { setCadenceFilter('gancho_24h'); setFilter('all'); }}
+                className={`px-2 py-0.5 rounded text-[9px] font-medium transition whitespace-nowrap ${
+                  cadenceFilter === 'gancho_24h' ? 'bg-blue-600 text-white font-semibold' : 'text-slate-500 hover:bg-blue-50'
                 }`}
               >
-                Follow-up (3-6d)
+                Gancho (24h-48h) ({contacts.filter(c => c.cadence_stage === 'gancho_24h').length})
               </button>
               <button
-                onClick={() => setCadenceFilter('followup_7d')}
-                className={`px-1.5 py-0.5 rounded text-[9px] font-medium transition whitespace-nowrap ${
-                  cadenceFilter === 'followup_7d' ? 'bg-amber-600 text-white font-semibold' : 'text-slate-500 hover:bg-amber-50'
+                onClick={() => { setCadenceFilter('archived'); setFilter('all'); }}
+                className={`px-2 py-0.5 rounded text-[9px] font-medium transition whitespace-nowrap ${
+                  cadenceFilter === 'archived' ? 'bg-slate-600 text-white font-semibold' : 'text-slate-500 hover:bg-slate-100'
                 }`}
               >
-                Fechamento (7-14d)
-              </button>
-              <button
-                onClick={() => setCadenceFilter('inativo')}
-                className={`px-1.5 py-0.5 rounded text-[9px] font-medium transition whitespace-nowrap ${
-                  cadenceFilter === 'inativo' ? 'bg-slate-500 text-white font-semibold' : 'text-slate-500 hover:bg-slate-100'
-                }`}
-              >
-                Inativos (+15d)
+                Arquivados (+8d) ({contacts.filter(c => c.status === 'archived').length})
               </button>
             </div>
           </div>
@@ -882,7 +892,7 @@ export default function App() {
                 <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" /> A carregar contactos...
               </div>
             ) : filteredContacts.length === 0 ? (
-              <div className="p-6 text-center text-xs text-slate-400">Nenhum contacto encontrado.</div>
+              <div className="p-6 text-center text-xs text-slate-400">Nenhum contacto encontrado nesta fila.</div>
             ) : (
               filteredContacts.map(contact => (
                 <div 
@@ -924,15 +934,20 @@ export default function App() {
                         Agendado
                       </span>
                     )}
+                    {contact.status === 'archived' && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-200 text-slate-700 border border-slate-300">
+                        Arquivado (Desapego)
+                      </span>
+                    )}
 
-                    {contact.days_inactive !== undefined && contact.days_inactive >= 3 && contact.status !== 'scheduled' && (
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium inline-flex items-center gap-1 border ${
-                        contact.days_inactive >= 15
-                          ? 'bg-slate-100 text-slate-600 border-slate-200'
-                          : contact.days_inactive >= 7
-                            ? 'bg-amber-50 text-amber-800 border-amber-200 font-semibold'
-                            : 'bg-blue-50 text-blue-700 border-blue-200'
-                      }`}>
+                    {contact.cadence_stage === 'gancho_24h' && contact.status !== 'scheduled' && contact.status !== 'archived' && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold inline-flex items-center gap-1 border bg-blue-50 text-blue-700 border-blue-200">
+                        🕒 Gancho Clínico ({Math.floor(contact.hours_inactive || 24)}h)
+                      </span>
+                    )}
+
+                    {contact.days_inactive !== undefined && contact.days_inactive >= 3 && contact.status !== 'scheduled' && contact.status !== 'archived' && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium inline-flex items-center gap-1 border bg-amber-50 text-amber-800 border-amber-200">
                         🕒 {contact.days_inactive}d sem resposta
                       </span>
                     )}
@@ -952,9 +967,9 @@ export default function App() {
                   <div className="flex items-center gap-2">
                     <h2 className="text-sm font-bold text-slate-900">{currentContact.name}</h2>
                     <span className="text-xs text-slate-400">{currentContact.phone}</span>
-                    {currentContact.days_inactive !== undefined && currentContact.days_inactive >= 3 && (
-                      <span className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200 font-medium">
-                        Sem resposta há {currentContact.days_inactive} dias
+                    {currentContact.cadence_stage === 'gancho_24h' && (
+                      <span className="text-[10px] text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200 font-medium">
+                        Janela Gancho Clínico (24h-48h)
                       </span>
                     )}
                   </div>
@@ -979,6 +994,11 @@ export default function App() {
                         <span className="w-2 h-2 rounded-full bg-blue-500"></span> Paciente Agendado no Sistema
                       </span>
                     )}
+                    {currentContact.status === 'archived' && (
+                      <span className="text-slate-600 flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-slate-500"></span> Contato Arquivado (Ciclo de Desapego Concluído)
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -989,8 +1009,19 @@ export default function App() {
                     title="Baixar Histórico Desta Conversa (.txt)"
                   >
                     <Download className="w-3.5 h-3.5 text-slate-500" />
-                    <span className="hidden lg:inline text-[11px]">Exportar Chat</span>
+                    <span className="hidden lg:inline text-[11px]">Exportar</span>
                   </button>
+
+                  {currentContact.status !== 'archived' && (
+                    <button 
+                      onClick={markAsArchived}
+                      className="px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1 transition bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300"
+                      title="Arquivar contato manualmente"
+                    >
+                      <Archive className="w-3.5 h-3.5" />
+                      <span className="hidden xl:inline">Arquivar</span>
+                    </button>
+                  )}
 
                   <button 
                     onClick={toggleAiStatus}
