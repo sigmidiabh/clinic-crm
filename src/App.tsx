@@ -150,6 +150,7 @@ export default function App() {
 
   // Estados Operacionais do Painel
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const contactsRef = useRef<Contact[]>([]);
   const [selectedId, setSelectedId] = useState<string>('');
   const selectedIdRef = useRef<string>('');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -163,6 +164,10 @@ export default function App() {
   useEffect(() => {
     selectedIdRef.current = selectedId;
   }, [selectedId]);
+
+  useEffect(() => {
+    contactsRef.current = contacts;
+  }, [contacts]);
 
   // Referência para rolagem automática do chat
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -231,16 +236,36 @@ export default function App() {
     setSession(null);
   };
 
-  const fetchMessages = async (contactId: string) => {
-    if (!contactId) return;
-    const { data, error } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('contact_id', contactId)
-      .order('created_at', { ascending: true });
+  const fetchMessages = async (contactId: string, contactPhone?: string) => {
+    if (!contactId && !contactPhone) return;
 
-    if (!error && data) {
-      setMessages(data as Message[]);
+    const targetContact = contactsRef.current.find((c) => c.id === contactId);
+    const phoneToSearch = contactPhone || targetContact?.phone;
+
+    if (contactId) {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('contact_id', contactId)
+        .order('created_at', { ascending: true });
+
+      if (!error && data && data.length > 0) {
+        setMessages(data as Message[]);
+        return;
+      }
+    }
+
+    if (phoneToSearch) {
+      const cleanDigits = phoneToSearch.replace(/\D/g, '').slice(-8);
+      const { data: byPhone, error: phoneErr } = await supabase
+        .from('messages')
+        .select('*')
+        .ilike('phone', `%${cleanDigits}`)
+        .order('created_at', { ascending: true });
+
+      if (!phoneErr && byPhone) {
+        setMessages(byPhone as Message[]);
+      }
     }
   };
 
@@ -253,20 +278,21 @@ export default function App() {
     if (!error && data) {
       const typedData = data as Contact[];
       setContacts(typedData);
+      contactsRef.current = typedData;
 
       if (typedData.length > 0) {
         const activeId = selectedIdRef.current;
-        const currentStillExists = typedData.some((c) => c.id === activeId);
+        const activeContact = typedData.find((c) => c.id === activeId);
 
-        if (!activeId || !currentStillExists) {
+        if (!activeId || !activeContact) {
           const firstContact = typedData[0];
           setSelectedId(firstContact.id);
           selectedIdRef.current = firstContact.id;
           setNotes(firstContact.internal_notes || '');
-          await fetchMessages(firstContact.id);
-          setTimeout(() => fetchMessages(firstContact.id), 600);
+          await fetchMessages(firstContact.id, firstContact.phone);
+          setTimeout(() => fetchMessages(firstContact.id, firstContact.phone), 800);
         } else {
-          await fetchMessages(activeId);
+          await fetchMessages(activeContact.id, activeContact.phone);
         }
       } else {
         setSelectedId('');
@@ -322,7 +348,13 @@ export default function App() {
             playSubtleNotificationChime();
           }
 
-          if (newMsg.contact_id === selectedIdRef.current) {
+          const currentObj = contactsRef.current.find((c) => c.id === selectedIdRef.current);
+          const samePhone =
+            currentObj &&
+            newMsg.phone &&
+            currentObj.phone.replace(/\D/g, '').slice(-8) === newMsg.phone.replace(/\D/g, '').slice(-8);
+
+          if (newMsg.contact_id === selectedIdRef.current || samePhone) {
             setMessages((prev) => {
               if (prev.some((m) => m.id === newMsg.id)) return prev;
               return [...prev, newMsg];
@@ -331,12 +363,11 @@ export default function App() {
 
           fetchContacts();
 
-          // Garante a exibição da 1ª mensagem caso ela tenha sido gravada milissegundos após a criação do contato
           setTimeout(() => {
             if (selectedIdRef.current) {
               fetchMessages(selectedIdRef.current);
             }
-          }, 600);
+          }, 800);
         }
       )
       .on(
@@ -348,7 +379,7 @@ export default function App() {
             if (selectedIdRef.current) {
               fetchMessages(selectedIdRef.current);
             }
-          }, 600);
+          }, 800);
         }
       )
       .on(
@@ -365,8 +396,8 @@ export default function App() {
 
   useEffect(() => {
     if (session && selectedId) {
-      fetchMessages(selectedId);
-      const contact = contacts.find((c) => c.id === selectedId);
+      const contact = contactsRef.current.find((c) => c.id === selectedId);
+      fetchMessages(selectedId, contact?.phone);
       if (contact) setNotes(contact.internal_notes || '');
     }
   }, [session, selectedId]);
@@ -408,7 +439,7 @@ export default function App() {
       last_message_at: new Date().toISOString()
     }).eq('id', currentContact.id);
 
-    fetchMessages(currentContact.id);
+    fetchMessages(currentContact.id, currentContact.phone);
   };
 
   const handleInsertQuickReply = (content: string) => {
@@ -856,7 +887,11 @@ export default function App() {
               filteredContacts.map(contact => (
                 <div 
                   key={contact.id}
-                  onClick={() => setSelectedId(contact.id)}
+                  onClick={() => {
+                    setSelectedId(contact.id);
+                    selectedIdRef.current = contact.id;
+                    fetchMessages(contact.id, contact.phone);
+                  }}
                   className={selectedId === contact.id ? 'p-3.5 cursor-pointer transition bg-emerald-50/60 border-l-4 border-emerald-600' : 'p-3.5 cursor-pointer transition hover:bg-slate-50'}
                 >
                   <div className="flex items-center justify-between mb-1">
