@@ -264,6 +264,7 @@ export default function App() {
           selectedIdRef.current = firstContact.id;
           setNotes(firstContact.internal_notes || '');
           await fetchMessages(firstContact.id);
+          setTimeout(() => fetchMessages(firstContact.id), 600);
         } else {
           await fetchMessages(activeId);
         }
@@ -327,13 +328,28 @@ export default function App() {
               return [...prev, newMsg];
             });
           }
+
           fetchContacts();
+
+          // Garante a exibição da 1ª mensagem caso ela tenha sido gravada milissegundos após a criação do contato
+          setTimeout(() => {
+            if (selectedIdRef.current) {
+              fetchMessages(selectedIdRef.current);
+            }
+          }, 600);
         }
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'contacts' },
-        () => fetchContacts()
+        () => {
+          fetchContacts();
+          setTimeout(() => {
+            if (selectedIdRef.current) {
+              fetchMessages(selectedIdRef.current);
+            }
+          }, 600);
+        }
       )
       .on(
         'postgres_changes',
