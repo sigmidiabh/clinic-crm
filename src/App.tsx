@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Search, Bot, CalendarCheck, Send, AlertCircle, Copy, Sparkles, RefreshCw,
+  Search, Bot, CalendarCheck, CalendarX, Send, AlertCircle, Copy, Sparkles, RefreshCw,
   Settings, Lock, KeyRound, Check, X, ShieldAlert, Clock, MessageSquareQuote, 
   Edit3, Download, FileSpreadsheet, LogOut, Mail, Volume2, VolumeX, Archive
 } from 'lucide-react';
@@ -155,7 +155,7 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string>('');
   const selectedIdRef = useRef<string>('');
   const [messages, setMessages] = useState<Message[]>([]);
-  const [filter, setFilter] = useState<'all' | 'waiting' | 'in_progress' | 'ai'>('all');
+  const [filter, setFilter] = useState<'all' | 'waiting' | 'in_progress' | 'ai' | 'scheduled'>('all');
   const [cadenceFilter, setCadenceFilter] = useState<'all' | 'gancho_24h' | 'archived'>('all');
   const [search, setSearch] = useState('');
   const [inputText, setInputText] = useState('');
@@ -413,12 +413,10 @@ export default function App() {
       contact.tag?.toLowerCase().includes(search.toLowerCase());
     if (!matchesSearch) return false;
 
-    // Se o filtro de cadência for "Arquivados (+8d)", exibe exclusivamente os arquivados
     if (cadenceFilter === 'archived') {
       return contact.status === 'archived' || contact.cadence_stage === 'arquivado';
     }
 
-    // Fora da busca textual e fora da aba Arquivados, oculta os contatos já arquivados para manter a fila limpa
     if (!isSearching && contact.status === 'archived') {
       return false;
     }
@@ -426,6 +424,7 @@ export default function App() {
     if (filter === 'waiting' && contact.status !== 'waiting_agent') return false;
     if (filter === 'in_progress' && contact.status !== 'in_progress') return false;
     if (filter === 'ai' && contact.status !== 'with_ai') return false;
+    if (filter === 'scheduled' && contact.status !== 'scheduled') return false;
 
     if (cadenceFilter === 'gancho_24h' && contact.cadence_stage !== 'gancho_24h') return false;
 
@@ -469,10 +468,29 @@ export default function App() {
     setContacts(contacts.map(c => c.id === currentContact.id ? { ...c, status: newStatus } : c));
   };
 
-  const markAsScheduled = async () => {
+  const toggleScheduledStatus = async () => {
     if (!currentContact) return;
-    await supabase.from('contacts').update({ status: 'scheduled' }).eq('id', currentContact.id);
-    setContacts(contacts.map(c => c.id === currentContact.id ? { ...c, status: 'scheduled' } : c));
+    const isCurrentlyScheduled = currentContact.status === 'scheduled';
+
+    if (isCurrentlyScheduled) {
+      await supabase
+        .from('contacts')
+        .update({
+          status: 'in_progress',
+          last_message_at: new Date().toISOString(),
+          desapego_sent_at: null
+        })
+        .eq('id', currentContact.id);
+
+      setContacts(contacts.map(c => c.id === currentContact.id ? { ...c, status: 'in_progress' } : c));
+    } else {
+      await supabase
+        .from('contacts')
+        .update({ status: 'scheduled' })
+        .eq('id', currentContact.id);
+
+      setContacts(contacts.map(c => c.id === currentContact.id ? { ...c, status: 'scheduled' } : c));
+    }
   };
 
   const markAsArchived = async () => {
@@ -842,6 +860,12 @@ export default function App() {
                 Atendimento ({contacts.filter(c => c.status === 'in_progress').length})
               </button>
               <button 
+                onClick={() => { setFilter('scheduled'); setCadenceFilter('all'); }} 
+                className={filter === 'scheduled' && cadenceFilter !== 'archived' ? 'px-2 py-1 rounded-md text-[10px] font-semibold whitespace-nowrap transition bg-blue-600 text-white' : 'px-2 py-1 rounded-md text-[10px] font-semibold whitespace-nowrap transition bg-slate-100 text-slate-600 hover:bg-slate-200'}
+              >
+                Agendados ({contacts.filter(c => c.status === 'scheduled').length})
+              </button>
+              <button 
                 onClick={() => { setFilter('ai'); setCadenceFilter('all'); }} 
                 className={filter === 'ai' && cadenceFilter !== 'archived' ? 'px-2 py-1 rounded-md text-[10px] font-medium whitespace-nowrap transition bg-purple-600 text-white' : 'px-2 py-1 rounded-md text-[10px] font-medium whitespace-nowrap transition bg-slate-100 text-slate-600 hover:bg-slate-200'}
               >
@@ -1032,10 +1056,27 @@ export default function App() {
                   </button>
                   
                   <button 
-                    onClick={markAsScheduled}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition"
+                    onClick={toggleScheduledStatus}
+                    className={
+                      currentContact.status === 'scheduled'
+                        ? 'bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition'
+                        : 'bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition'
+                    }
+                    title={
+                      currentContact.status === 'scheduled'
+                        ? 'Reverter agendamento e devolver paciente para atendimento ativo'
+                        : 'Confirmar paciente como agendado'
+                    }
                   >
-                    <CalendarCheck className="w-3.5 h-3.5" /> Marcar Agendado
+                    {currentContact.status === 'scheduled' ? (
+                      <>
+                        <CalendarX className="w-3.5 h-3.5" /> Desmarcar / Reabrir
+                      </>
+                    ) : (
+                      <>
+                        <CalendarCheck className="w-3.5 h-3.5" /> Marcar Agendado
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
