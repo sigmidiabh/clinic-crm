@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { 
   Search, Bot, CalendarCheck, CalendarX, Send, AlertCircle, Copy, Sparkles, RefreshCw,
   Settings, Lock, KeyRound, Check, X, ShieldAlert, Clock, MessageSquareQuote, 
-  Edit3, Download, FileSpreadsheet, LogOut, Mail, Volume2, VolumeX, Archive
+  Edit3, Download, FileSpreadsheet, LogOut, Mail, Volume2, VolumeX, Archive, HelpCircle
 } from 'lucide-react';
 import { supabase } from './supabase';
+
+const HelpModal = lazy(() => import('./HelpModal'));
 
 interface Message {
   id: string;
@@ -148,6 +150,9 @@ export default function App() {
   useEffect(() => {
     soundEnabledRef.current = soundEnabled;
   }, [soundEnabled]);
+
+  // Controle do Modal de Ajuda (Guia Rápido)
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
 
   // Estados Operacionais do Painel
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -805,6 +810,15 @@ export default function App() {
           <div className="text-xs text-slate-400 border-l border-slate-800 pl-3 flex items-center gap-2">
             <span>Operador: <strong>{session.user?.email || 'Poliana'}</strong></span>
           </div>
+
+          <button
+            onClick={() => setIsHelpOpen(true)}
+            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition flex items-center gap-1.5 text-xs border border-slate-700"
+            title="Guia Rápido de Uso do Painel"
+          >
+            <HelpCircle className="w-4 h-4 text-sky-400" />
+            <span className="hidden md:inline">Ajuda</span>
+          </button>
 
           <button 
             onClick={() => {
@@ -1545,6 +1559,13 @@ export default function App() {
 
           </div>
         </div>
+      )}
+
+      {/* MODAL 3: GUIA RÁPIDO DE USO DO PAINEL (CARREGAMENTO SOB DEMANDA) */}
+      {isHelpOpen && (
+        <Suspense fallback={null}>
+          <HelpModal onClose={() => setIsHelpOpen(false)} />
+        </Suspense>
       )}
 
     </div>
