@@ -2,25 +2,27 @@ import React, { useState } from 'react';
 import {
   X, Search, BookOpen, Users, MessageSquare, Sparkles, Clock,
   CalendarCheck, CalendarX, Bot, Archive, Download, MessageSquareQuote,
-  Edit3, Settings, Volume2, Copy, CheckCircle2, AlertCircle
+  Edit3, Settings, Volume2, Copy, CheckCircle2, AlertCircle, HeartHandshake,
+  ShieldCheck, Zap
 } from 'lucide-react';
 
 interface HelpModalProps {
   onClose: () => void;
 }
 
-type HelpTab = 'visao_geral' | 'filas_cadencia' | 'chat_agenda' | 'atalhos_dossie' | 'admin';
+type HelpTab = 'visao_geral' | 'protocolo_premium' | 'filas_cadencia' | 'chat_agenda' | 'atalhos_dossie' | 'admin';
 
 export default function HelpModal({ onClose }: HelpModalProps) {
   const [activeTab, setActiveTab] = useState<HelpTab>('visao_geral');
   const [searchQuery, setSearchQuery] = useState('');
 
   const tabs: { id: HelpTab; label: string; icon: React.ReactNode }[] = [
-    { id: 'visao_geral', label: '1. Visão Geral & Login', icon: <BookOpen className="w-3.5 h-3.5" /> },
-    { id: 'filas_cadencia', label: '2. Filas & Cadência', icon: <Clock className="w-3.5 h-3.5" /> },
-    { id: 'chat_agenda', label: '3. Chat, IA & Agenda', icon: <CalendarCheck className="w-3.5 h-3.5" /> },
-    { id: 'atalhos_dossie', label: '4. Atalhos & Dossiê', icon: <MessageSquareQuote className="w-3.5 h-3.5" /> },
-    { id: 'admin', label: '5. Instruções IA & CSV', icon: <Settings className="w-3.5 h-3.5" /> },
+    { id: 'visao_geral', label: '1. Visão Geral', icon: <BookOpen className="w-3.5 h-3.5" /> },
+    { id: 'protocolo_premium', label: '2. Protocolo Saúde Premium', icon: <HeartHandshake className="w-3.5 h-3.5" /> },
+    { id: 'filas_cadencia', label: '3. Filas & Etiquetas', icon: <Clock className="w-3.5 h-3.5" /> },
+    { id: 'chat_agenda', label: '4. Chat, IA & Agenda', icon: <CalendarCheck className="w-3.5 h-3.5" /> },
+    { id: 'atalhos_dossie', label: '5. Atalhos & Dossiê', icon: <MessageSquareQuote className="w-3.5 h-3.5" /> },
+    { id: 'admin', label: '6. Instruções IA & CSV', icon: <Settings className="w-3.5 h-3.5" /> },
   ];
 
   const q = searchQuery.trim().toLowerCase();
@@ -36,8 +38,8 @@ export default function HelpModal({ onClose }: HelpModalProps) {
               <BookOpen className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-sm font-bold text-white">Guia Rápido da Central de Atendimento</h2>
-              <p className="text-[11px] text-slate-400">Manual interativo de operação • Dr. Cristiano Miranda</p>
+              <h2 className="text-sm font-bold text-white">Guia do Atendente & Manual do Painel</h2>
+              <p className="text-[11px] text-slate-400">Protocolo Saúde Premium e Operação • Dr. Cristiano Miranda</p>
             </div>
           </div>
 
@@ -48,8 +50,8 @@ export default function HelpModal({ onClose }: HelpModalProps) {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Buscar dúvida (ex: desmarcar, gancho)..."
-                className="bg-slate-800 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 w-64"
+                placeholder="Buscar (ex: ansiedade, caro, desapego, gancho)..."
+                className="bg-slate-800 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 w-72"
               />
             </div>
 
@@ -87,14 +89,13 @@ export default function HelpModal({ onClose }: HelpModalProps) {
         <div className="p-6 overflow-y-auto space-y-6 text-slate-200 flex-1">
           
           {/* SEÇÃO 1: VISÃO GERAL & LOGIN */}
-          {(q ? 'login acesso som mudo colunas visao geral'.includes(q) || q.length > 2 : activeTab === 'visao_geral') && (
+          {(q ? 'login acesso som mudo colunas visao geral estrutura'.includes(q) || q.length > 2 : activeTab === 'visao_geral') && (
             <section className="space-y-4">
               <div className="border-b border-slate-800 pb-2">
                 <h3 className="text-sm font-bold text-emerald-400">1. Estrutura do Painel & Controles Gerais</h3>
                 <p className="text-xs text-slate-400">Como o ambiente é dividido para organizar o fluxo entre a Marina (IA) e a Poliana.</p>
               </div>
 
-              {/* Miniatura Visual das 3 Colunas */}
               <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3">
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Arquitetura em 3 Colunas</p>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
@@ -127,7 +128,6 @@ export default function HelpModal({ onClose }: HelpModalProps) {
                 </div>
               </div>
 
-              {/* Barra Superior */}
               <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-2">
                 <p className="text-xs font-bold text-white flex items-center gap-1.5">
                   <Volume2 className="w-4 h-4 text-emerald-400" /> Alerta Sonoro & Conexão
@@ -139,12 +139,88 @@ export default function HelpModal({ onClose }: HelpModalProps) {
             </section>
           )}
 
-          {/* SEÇÃO 2: FILAS & CADÊNCIA */}
-          {(q ? 'fila status aguardando atendimento agendado marina gancho clinico desapego positivo arquivado'.includes(q) || q.length > 2 : activeTab === 'filas_cadencia') && (
+          {/* SEÇÃO 2: PROTOCOLO DO ATENDENTE SAÚDE PREMIUM */}
+          {(q ? 'protocolo postura varejo cobranca ansiedade atropelar marina ia gancho clinico desapego positivo caro valor preco desconto automatico'.includes(q) || q.length > 2 : activeTab === 'protocolo_premium') && (
             <section className="space-y-4">
               <div className="border-b border-slate-800 pb-2">
-                <h3 className="text-sm font-bold text-emerald-400">2. Etiquetas de Status & Cadência de Retorno</h3>
-                <p className="text-xs text-slate-400">Entenda o significado de cada selo colorido na lista da esquerda e a rotina de acompanhamento.</p>
+                <h3 className="text-sm font-bold text-emerald-400">2. Manual do Atendente • Protocolo Saúde Premium</h3>
+                <p className="text-xs text-slate-400">Diretrizes de postura clínica, condução de objeções e divisão entre ação manual e automática.</p>
+              </div>
+
+              {/* Comparativo de Postura */}
+              <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3 text-xs">
+                <div className="font-bold text-white flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" /> Postura na Saúde Particular vs. Ansiedade Comercial
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[11px]">
+                  <div className="bg-rose-950/25 border border-rose-800/40 rounded-lg p-3 space-y-1.5">
+                    <div className="font-bold text-rose-300">❌ O Erro Fatal (Evitar sempre)</div>
+                    <p className="text-slate-300 italic">"Oi, sumiu? Vamos fechar a consulta?" ou atropelar a Marina enquanto ela ainda está triando o paciente.</p>
+                    <ul className="list-disc list-inside text-slate-400 space-y-1 pt-1">
+                      <li><strong>Ansiedade para agendar:</strong> Entrar no chat com o selo <em>Marina Ativa</em> interrompe a IA no meio da triagem e joga preços/horários antes da hora.</li>
+                      <li><strong>Pressão de cobrança:</strong> Gera constrangimento financeiro e rebaixa a consulta médica a produto de balcão.</li>
+                    </ul>
+                  </div>
+
+                  <div className="bg-emerald-950/25 border border-emerald-800/40 rounded-lg p-3 space-y-1.5">
+                    <div className="font-bold text-emerald-300">✅ Padrão Saúde Premium</div>
+                    <ul className="list-disc list-inside text-slate-300 space-y-1 pt-0.5">
+                      <li><strong>Respeite o tempo da IA:</strong> Enquanto estiver <em>Marina Ativa</em>, deixe ela acolher e colher a queixa. Assuma apenas quando virar <strong>Aguardando Poliana</strong>.</li>
+                      <li><strong>Foco no Cuidado:</strong> Esclarece dúvidas do formato antes de falar de agenda.</li>
+                      <li><strong>Tom Sereno:</strong> Cadência espaçada, pontuação correta e no máximo 1 emoji discreto.</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              {/* Etapa 1 (Manual) e Etapa 2 (Automática) */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                {/* ETAPA 1: MANUAL */}
+                <div className="bg-slate-950 border border-blue-800/50 rounded-xl p-4 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-blue-300 text-xs">Etapa 1: Gancho Clínico (24h–48h)</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                      AÇÃO MANUAL (POLIANA)
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    Quando o lead ficar em silêncio entre 24h e 48h, clique no filtro <strong>Gancho (24h-48h)</strong> e envie o atalho correspondente. Ao dizer que o <strong>Dr. Cristiano pediu para checar dúvidas sobre o formato</strong>, você transfere autoridade médica e tira a pressão de venda.
+                  </p>
+                  <div className="bg-slate-900 border border-slate-800 rounded-lg p-2.5 space-y-1 text-[11px]">
+                    <div className="font-semibold text-slate-200">Como conduzir se o paciente responder:</div>
+                    <p className="text-slate-400">• <strong>Dúvida sobre a consulta:</strong> Explique o formato integrativo e aprofundado antes de oferecer horários.</p>
+                    <p className="text-slate-400">• <strong>"Achei caro":</strong> Reforce o tempo dedicado de consulta e o acompanhamento; <strong>nunca ofereça desconto de imediato</strong>.</p>
+                    <p className="text-slate-400">• <strong>Novo silêncio:</strong> Não envie novas mensagens; aguarde o ciclo automático da Etapa 2.</p>
+                  </div>
+                </div>
+
+                {/* ETAPA 2: AUTOMÁTICA */}
+                <div className="bg-slate-950 border border-purple-800/50 rounded-xl p-4 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-purple-300 text-xs">Etapa 2: Desapego Positivo (+8 dias)</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center gap-1">
+                      <Zap className="w-3 h-3" /> 100% AUTOMÁTICO
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    <strong>Você não precisa enviar esta mensagem manualmente.</strong> Após 8 dias sem resposta, o sistema dispara automaticamente em horário comercial o encerramento elegante (<em>"...imaginei que tenha adiado a busca pela consulta por enquanto, e está tudo bem"</em>) e move o contato para <strong>Arquivados (+8d)</strong>.
+                  </p>
+                  <div className="bg-slate-900 border border-slate-800 rounded-lg p-2.5 space-y-1 text-[11px]">
+                    <div className="font-semibold text-slate-200">O que acontece após o envio automático:</div>
+                    <p className="text-slate-400">• <strong>Se o paciente responder ("Desculpe a correria, quero agendar"):</strong> O contato volta sozinho para a fila ativa — acolha com carinho e siga com o agendamento.</p>
+                    <p className="text-slate-400">• <strong>Se mantiver silêncio:</strong> O contato permanece arquivado. Nunca envie mensagens em massa sem nova solicitação.</p>
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {/* SEÇÃO 3: FILAS & ETIQUETAS */}
+          {(q ? 'fila status aguardando atendimento agendado marina gancho clinico desapego positivo arquivado etiquetas'.includes(q) || q.length > 2 : activeTab === 'filas_cadencia') && (
+            <section className="space-y-4">
+              <div className="border-b border-slate-800 pb-2">
+                <h3 className="text-sm font-bold text-emerald-400">3. Etiquetas de Status & Filtros da Lista</h3>
+                <p className="text-xs text-slate-400">Significado de cada selo colorido na coluna da esquerda para priorizar seu dia.</p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
@@ -171,27 +247,27 @@ export default function HelpModal({ onClose }: HelpModalProps) {
                     🕒 Gancho Clínico (24h–48h)
                   </span>
                   <p className="text-[11px] text-slate-400 leading-relaxed">
-                    Paciente recebeu valores/horários mas não respondeu entre 24h e 48h. Clique no filtro <strong>Gancho (24h-48h)</strong> e envie o atalho correspondente.
+                    Sinaliza que o paciente está na janela ideal para a Poliana enviar o <strong>Gancho Clínico</strong> manualmente.
                   </p>
                 </div>
 
                 <div className="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-1.5">
                   <span className="inline-block px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-700 text-slate-300 border border-slate-600">
-                    Arquivado (+8d • Desapego)
+                    Arquivado (Desapego)
                   </span>
                   <p className="text-[11px] text-slate-400 leading-relaxed">
-                    Após <strong>8 dias</strong> sem retorno, o sistema envia automaticamente uma mensagem elegante de encerramento e limpa a fila ativa. Se o paciente responder depois, ele volta sozinho para o topo!
+                    Lead encerrado automaticamente após 8 dias sem resposta (ou arquivado manualmente). Fica oculto da fila ativa para manter sua tela limpa.
                   </p>
                 </div>
               </div>
             </section>
           )}
 
-          {/* SEÇÃO 3: CHAT, IA & AGENDA */}
+          {/* SEÇÃO 4: CHAT, IA & AGENDA */}
           {(q ? 'agendar desmarcar reabrir reativar marina pausar ia exportar arquivar'.includes(q) || q.length > 2 : activeTab === 'chat_agenda') && (
             <section className="space-y-4">
               <div className="border-b border-slate-800 pb-2">
-                <h3 className="text-sm font-bold text-emerald-400">3. Botões de Ação do Chat (Agenda & Controle da IA)</h3>
+                <h3 className="text-sm font-bold text-emerald-400">4. Botões de Ação do Chat (Agenda & Controle da IA)</h3>
                 <p className="text-xs text-slate-400">Como controlar o status da consulta e alternar entre atendimento humano e inteligência artificial.</p>
               </div>
 
@@ -202,7 +278,7 @@ export default function HelpModal({ onClose }: HelpModalProps) {
                       <CalendarCheck className="w-4 h-4 text-emerald-400" /> Marcar Agendado
                     </div>
                     <p className="text-[11px] text-slate-400 leading-relaxed">
-                      Clique assim que confirmar dia e horário na agenda. O paciente recebe o selo azul <strong>Agendado</strong> e sai da fila de cobrança/follow-up automático.
+                      Clique assim que confirmar dia e horário na agenda. O paciente recebe o selo azul <strong>Agendado</strong> e sai da fila de follow-up automático.
                     </p>
                   </div>
                   <span className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-[11px] font-medium shrink-0 self-start sm:self-center">
@@ -261,11 +337,11 @@ export default function HelpModal({ onClose }: HelpModalProps) {
             </section>
           )}
 
-          {/* SEÇÃO 4: ATALHOS & DOSSIÊ */}
+          {/* SEÇÃO 5: ATALHOS & DOSSIÊ */}
           {(q ? 'atalhos mensagens prontas editar nome dossie resumo prontuario notas'.includes(q) || q.length > 2 : activeTab === 'atalhos_dossie') && (
             <section className="space-y-4">
               <div className="border-b border-slate-800 pb-2">
-                <h3 className="text-sm font-bold text-emerald-400">4. Atalhos Rápidos & Dossiê de Triagem</h3>
+                <h3 className="text-sm font-bold text-emerald-400">5. Atalhos Rápidos & Dossiê de Triagem</h3>
                 <p className="text-xs text-slate-400">Agilidade para responder dúvidas frequentes e transferir dados clínicos para o prontuário.</p>
               </div>
 
@@ -295,11 +371,11 @@ export default function HelpModal({ onClose }: HelpModalProps) {
             </section>
           )}
 
-          {/* SEÇÃO 5: ADMINISTRAÇÃO */}
+          {/* SEÇÃO 6: ADMINISTRAÇÃO */}
           {(q ? 'instrucoes ia system prompt csv planilha relatorio administrador'.includes(q) || q.length > 2 : activeTab === 'admin') && (
             <section className="space-y-4">
               <div className="border-b border-slate-800 pb-2">
-                <h3 className="text-sm font-bold text-purple-400">5. Administração da Marina & Exportação CSV</h3>
+                <h3 className="text-sm font-bold text-purple-400">6. Administração da Marina & Exportação CSV</h3>
                 <p className="text-xs text-slate-400">Área protegida pela senha do administrador mestre no botão <strong>Instruções IA</strong> (topo direito).</p>
               </div>
 
