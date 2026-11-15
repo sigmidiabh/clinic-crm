@@ -340,7 +340,7 @@ export default function HelpModal({ onClose }: HelpModalProps) {
                   </div>
                   <div className="flex items-start gap-2">
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
-                    <span><strong>2.</strong> Revise o nome do paciente antes de enviar atalhos.</span>
+                    <span><strong>2.</strong> Ao usar um dos botões de atalho, revise o nome do paciente antes de enviar a mensagem.</span>
                   </div>
                   <div className="flex items-start gap-2">
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
