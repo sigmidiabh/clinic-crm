@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import {
-  X, Search, BookOpen, Users, MessageSquare, Sparkles, Clock,
+  X, Search, BookOpen, Users, MessageSquare, Sparkles,
   CalendarCheck, CalendarX, Bot, Archive, Download, MessageSquareQuote,
-  Edit3, Settings, Volume2, Copy, CheckCircle2, AlertCircle, HeartHandshake,
+  Edit3, Settings, Volume2, CheckCircle2, HeartHandshake,
   ShieldCheck, Zap, Monitor
 } from 'lucide-react';
 
@@ -91,7 +91,7 @@ export default function HelpModal({ onClose }: HelpModalProps) {
           {/* ===================================================================== */}
           {/* ABA 1: INSTRUÇÕES DO PAINEL (FUNCIONALIDADES E BOTÕES DO CRM)         */}
           {/* ===================================================================== */}
-          {(q ? 'painel colunas som mudo etiqueta filtro aguardando atendimento agendado desmarcar reabrir marina atalhos dossie prontuario admin csv'.includes(q) || q.length > 2 : activeSection === 'painel') && (
+          {(q ? 'painel colunas som mudo etiqueta filtro aguardando atendimento agendado desmarcar reabrir arquivar marina atalhos dossie prontuario admin csv'.includes(q) || q.length > 2 : activeSection === 'painel') && (
             <div className="space-y-6">
               
               {/* BLOCO 1.1: ESTRUTURA DO PAINEL */}
@@ -171,7 +171,7 @@ export default function HelpModal({ onClose }: HelpModalProps) {
               {/* BLOCO 1.3: BOTÕES DE AÇÃO DO CHAT */}
               <section className="space-y-3">
                 <div className="border-b border-slate-800 pb-1.5">
-                  <h3 className="text-sm font-bold text-emerald-400">3. Botões de Controle (Agenda, IA e Atalhos)</h3>
+                  <h3 className="text-sm font-bold text-emerald-400">3. Botões de Controle (Agenda, Arquivamento, IA e Atalhos)</h3>
                 </div>
 
                 <div className="space-y-2.5 text-xs">
@@ -188,6 +188,20 @@ export default function HelpModal({ onClose }: HelpModalProps) {
                       <span className="px-2.5 py-1 rounded bg-emerald-600 text-white text-[10px] font-medium">Marcar Agendado</span>
                       <span className="px-2.5 py-1 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-medium">Desmarcar / Reabrir</span>
                     </div>
+                  </div>
+
+                  <div className="bg-slate-950 border border-slate-800 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <div className="font-bold text-white flex items-center gap-1.5">
+                        <Archive className="w-3.5 h-3.5 text-slate-300" /> Arquivar (Encerrar Fila & Bloquear Automação)
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Remove o contato da fila ativa e <strong>interrompe o disparo automático do Desapego Positivo (+8 dias)</strong>. Use sempre que encerrar um assunto ou quando um <strong>paciente antigo desmarcar</strong> e avisar que só vai remarcar futuramente.
+                      </p>
+                    </div>
+                    <span className="px-2.5 py-1 rounded bg-slate-800 text-slate-200 border border-slate-700 text-[10px] font-medium shrink-0">
+                      Arquivar
+                    </span>
                   </div>
 
                   <div className="bg-slate-950 border border-slate-800 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -241,7 +255,7 @@ export default function HelpModal({ onClose }: HelpModalProps) {
           {/* ===================================================================== */}
           {/* ABA 2: PROTOCOLO DE ATENDIMENTO (POSTURA & RECUPERAÇÃO SAÚDE PREMIUM) */}
           {/* ===================================================================== */}
-          {(q ? 'protocolo postura ansiedade atropelar cobranca gancho clinico desapego positivo caro valor preco desconto automatico checklist'.includes(q) || q.length > 2 : activeSection === 'protocolo') && (
+          {(q ? 'protocolo postura ansiedade atropelar cobranca gancho clinico desapego positivo desmarcar desmarcacao paciente antigo caro valor preco desconto automatico checklist'.includes(q) || q.length > 2 : activeSection === 'protocolo') && (
             <div className="space-y-6">
 
               {/* BLOCO 2.1: POSTURA E ERRO FATAL (ANSIEDADE) */}
@@ -285,7 +299,7 @@ export default function HelpModal({ onClose }: HelpModalProps) {
               <section className="space-y-3">
                 <div className="border-b border-slate-800 pb-1.5">
                   <h3 className="text-sm font-bold text-emerald-400">2. Cadência de Recuperação (O que é Manual vs. Automático)</h3>
-                  <p className="text-xs text-slate-400">Divisão exata de responsabilidades quando o paciente para de responder.</p>
+                  <p className="text-xs text-slate-400">Divisão exata de responsabilidades quando o paciente para de responder ou desmarca uma consulta.</p>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
@@ -326,6 +340,24 @@ export default function HelpModal({ onClose }: HelpModalProps) {
                     </div>
                   </div>
                 </div>
+
+                {/* ORIENTAÇÃO ESPECÍFICA PARA DESMARCAÇÃO DE CONSULTA */}
+                <div className="bg-amber-950/20 border border-amber-800/40 rounded-xl p-4 space-y-2 text-[11px]">
+                  <div className="font-bold text-amber-300 text-xs flex items-center gap-1.5">
+                    <CalendarX className="w-4 h-4 text-amber-400" /> Protocolo em Caso de Desmarcação de Consulta
+                  </div>
+                  <p className="text-slate-300 leading-relaxed">
+                    Ao clicar em <strong>Desmarcar / Reabrir</strong>, o relógio de acompanhamento (24h–48h e 8 dias) volta a contar do zero:
+                  </p>
+                  <ul className="list-disc list-inside text-slate-300 space-y-1 leading-relaxed">
+                    <li>
+                      <strong>Paciente quer remarcar em breve (ou é lead novo):</strong> Deixe o contato na fila ativa. Se ele não escolher nova data em 24h–48h, faça o acompanhamento cordial.
+                    </li>
+                    <li>
+                      <strong>Paciente antigo que adiou sem previsão (ex: "só mês que vem"):</strong> Acolha com serenidade e clique em <strong>Arquivar</strong> logo após desmarcar, evitando que ele receba a mensagem automática de encerramento de 8 dias.
+                    </li>
+                  </ul>
+                </div>
               </section>
 
               {/* BLOCO 2.3: CHECKLIST DE OURO */}
@@ -348,7 +380,7 @@ export default function HelpModal({ onClose }: HelpModalProps) {
                   </div>
                   <div className="flex items-start gap-2">
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
-                    <span><strong>4.</strong> Deixe o Desapego Positivo (+8d) rodar no piloto automático.</span>
+                    <span><strong>4.</strong> Deixe o Desapego Positivo (+8d) rodar no piloto automático (ou arquive pacientes antigos sem previsão).</span>
                   </div>
                 </div>
               </section>
