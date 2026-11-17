@@ -3,7 +3,7 @@ import {
   Search, Bot, CalendarCheck, CalendarX, Send, AlertCircle, Copy, Sparkles, RefreshCw,
   Settings, Lock, KeyRound, Check, X, ShieldAlert, Clock, MessageSquareQuote, 
   Edit3, Download, FileSpreadsheet, LogOut, Mail, Volume2, VolumeX, Archive, HelpCircle,
-  Plus, Trash2
+  Plus, Trash2, GripVertical, ArrowUp, ArrowDown
 } from 'lucide-react';
 import { supabase } from './supabase';
 
@@ -211,6 +211,7 @@ export default function App() {
   const [operatorPasswordError, setOperatorPasswordError] = useState('');
   const [editingReplies, setEditingReplies] = useState<QuickReply[]>(DEFAULT_QUICK_REPLIES);
   const [deletedSlugs, setDeletedSlugs] = useState<string[]>([]);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [isSavingTemplates, setIsSavingTemplates] = useState(false);
   const [templatesSaveSuccess, setTemplatesSaveSuccess] = useState(false);
 
@@ -624,6 +625,14 @@ export default function App() {
     setEditingReplies(editingReplies.filter((_, i) => i !== index));
   };
 
+  const moveTemplate = (fromIndex: number, toIndex: number) => {
+    if (toIndex < 0 || toIndex >= editingReplies.length || fromIndex === toIndex) return;
+    const updated = [...editingReplies];
+    const [movedItem] = updated.splice(fromIndex, 1);
+    updated.splice(toIndex, 0, movedItem);
+    setEditingReplies(updated);
+  };
+
   const handleSaveTemplates = async () => {
     setIsSavingTemplates(true);
     setTemplatesSaveSuccess(false);
@@ -912,10 +921,10 @@ export default function App() {
       </header>
 
       {/* ÁREA PRINCIPAL: 3 COLUNAS */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden min-w-0">
 
         {/* COLUNA 1: LISTA DE CONVERSAS */}
-        <aside className="w-80 md:w-96 bg-white border-r border-slate-200 flex flex-col shrink-0">
+        <aside className="w-72 lg:w-80 xl:w-96 bg-white border-r border-slate-200 flex flex-col shrink-0">
           <div className="p-3 border-b border-slate-100 bg-slate-50/60 space-y-2">
             <div className="relative">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
@@ -1064,14 +1073,14 @@ export default function App() {
           </div>
         </aside>
 
-        {/* COLUNA 2: ÁREA DE CHAT */}
-        <section className="flex-1 bg-[#f0f2f5] flex flex-col border-r border-slate-200 relative">
+        {/* COLUNA 2: ÁREA DE CHAT (min-w-0 impede empurrar a barra de resumo) */}
+        <section className="flex-1 min-w-0 bg-[#f0f2f5] flex flex-col border-r border-slate-200 relative">
           {currentContact ? (
             <>
-              <div className="bg-white px-5 py-3 border-b border-slate-200 flex items-center justify-between shadow-sm">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-sm font-bold text-slate-900">{currentContact.name}</h2>
+              <div className="bg-white px-4 py-2.5 border-b border-slate-200 flex items-center justify-between gap-2 shadow-sm shrink-0">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="text-sm font-bold text-slate-900 truncate">{currentContact.name}</h2>
                     <span className="text-xs text-slate-400">{currentContact.phone}</span>
                     {currentContact.cadence_stage === 'gancho_24h' && (
                       <span className="text-[10px] text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200 font-medium">
@@ -1108,14 +1117,14 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     onClick={handleExportSingleChat}
                     className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition flex items-center gap-1 text-xs border border-slate-200"
                     title="Baixar Histórico Desta Conversa (.txt)"
                   >
                     <Download className="w-3.5 h-3.5 text-slate-500" />
-                    <span className="hidden lg:inline text-[11px]">Exportar</span>
+                    <span className="hidden xl:inline text-[11px]">Exportar</span>
                   </button>
 
                   {currentContact.status !== 'archived' && (
@@ -1131,7 +1140,7 @@ export default function App() {
 
                   <button 
                     onClick={toggleAiStatus}
-                    className={currentContact.status === 'with_ai' ? 'px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300' : 'px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition bg-purple-100 text-purple-800 hover:bg-purple-200 border border-purple-300'}
+                    className={currentContact.status === 'with_ai' ? 'px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300' : 'px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition bg-purple-100 text-purple-800 hover:bg-purple-200 border border-purple-300'}
                   >
                     <Bot className="w-3.5 h-3.5" />
                     {currentContact.status === 'with_ai' ? 'Pausar IA / Assumir' : 'Reativar Marina IA'}
@@ -1141,8 +1150,8 @@ export default function App() {
                     onClick={toggleScheduledStatus}
                     className={
                       currentContact.status === 'scheduled'
-                        ? 'bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition'
-                        : 'bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition'
+                        ? 'bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition'
+                        : 'bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition'
                     }
                     title={
                       currentContact.status === 'scheduled'
@@ -1163,7 +1172,8 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="flex-1 p-5 overflow-y-auto space-y-3.5">
+              {/* ÁREA DE MENSAGENS (flex-1 min-h-0 ajusta sua altura automaticamente) */}
+              <div className="flex-1 min-h-0 px-5 py-4 overflow-y-auto space-y-3">
                 {messages.map(msg => {
                   const role = getSenderRole(msg.sender);
                   return (
@@ -1199,48 +1209,57 @@ export default function App() {
                 <div ref={messagesEndRef} />
               </div>
 
-              {/* ATALHOS RÁPIDOS DINÂMICOS */}
-              <div className="bg-slate-50 border-t border-slate-200 px-4 py-2 flex items-center gap-2 overflow-x-auto shrink-0">
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider shrink-0 flex items-center gap-1">
-                  <MessageSquareQuote className="w-3 h-3 text-emerald-600" /> Atalhos:
-                </span>
-                
-                {quickReplies.map((qr) => (
-                  <button 
-                    key={qr.slug}
-                    onClick={() => handleInsertQuickReply(qr.content)}
-                    className="px-2.5 py-1 bg-white hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 rounded-full text-[11px] text-slate-700 hover:text-emerald-800 whitespace-nowrap transition font-medium shadow-2xs"
-                  >
-                    {qr.title}
-                  </button>
-                ))}
+              {/* ATALHOS RÁPIDOS DINÂMICOS (flex-wrap para caber sem cortar e mostrar todos os atalhos) */}
+              <div className="bg-slate-50 border-t border-slate-200 px-4 py-2.5 shrink-0 max-h-28 overflow-y-auto">
+                <div className="flex items-center flex-wrap gap-1.5">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 mr-1">
+                    <MessageSquareQuote className="w-3.5 h-3.5 text-emerald-600" /> Atalhos:
+                  </span>
+                  
+                  {quickReplies.map((qr) => (
+                    <button 
+                      key={qr.slug}
+                      onClick={() => handleInsertQuickReply(qr.content)}
+                      className="px-2.5 py-1 bg-white hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 rounded-full text-[11px] text-slate-700 hover:text-emerald-800 transition font-medium shadow-2xs"
+                    >
+                      {qr.title}
+                    </button>
+                  ))}
 
-                <button
-                  onClick={() => {
-                    setEditingReplies(quickReplies);
-                    setDeletedSlugs([]);
-                    setIsTemplatesModalOpen(true);
-                  }}
-                  className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition ml-auto shrink-0"
-                  title="Editar Modelos de Mensagens (Acesso da Operadora)"
-                >
-                  <Edit3 className="w-3.5 h-3.5" />
-                </button>
+                  <button
+                    onClick={() => {
+                      setEditingReplies(quickReplies);
+                      setDeletedSlugs([]);
+                      setIsTemplatesModalOpen(true);
+                    }}
+                    className="p-1.5 rounded-full text-slate-500 hover:text-slate-800 hover:bg-slate-200 transition ml-auto flex items-center gap-1 text-[10px] font-medium"
+                    title="Editar e Reordenar Modelos de Mensagens"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Editar</span>
+                  </button>
+                </div>
               </div>
 
-              {/* ENVIAR MENSAGEM */}
-              <div className="bg-white p-3 border-t border-slate-200 flex items-center gap-2 shrink-0">
-                <input 
-                  type="text" 
+              {/* ENVIAR MENSAGEM (Área ampliada com textarea para textos maiores) */}
+              <div className="bg-white p-3.5 border-t border-slate-200 flex items-end gap-2.5 shrink-0">
+                <textarea 
+                  rows={3}
                   value={inputText}
                   onChange={e => setInputText(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleSendMessage()}
-                  placeholder="Digite a mensagem como Poliana..." 
-                  className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-emerald-600 transition"
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }
+                  }}
+                  placeholder="Digite a mensagem como Poliana... (Enter envia • Shift+Enter pula linha)" 
+                  className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs leading-relaxed focus:outline-none focus:border-emerald-600 transition resize-none"
                 />
                 <button 
                   onClick={handleSendMessage}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white w-9 h-9 rounded-xl flex items-center justify-center transition shrink-0"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white w-10 h-10 rounded-xl flex items-center justify-center transition shrink-0 shadow-xs"
+                  title="Enviar mensagem (Enter)"
                 >
                   <Send className="w-4 h-4" />
                 </button>
@@ -1255,7 +1274,7 @@ export default function App() {
 
         {/* COLUNA 3: DOSSIÊ DE TRIAGEM */}
         {currentContact && (
-          <aside className="w-80 bg-white border-l border-slate-200 flex flex-col shrink-0 overflow-y-auto">
+          <aside className="w-72 xl:w-80 bg-white border-l border-slate-200 flex flex-col shrink-0 overflow-y-auto">
             <div className="p-4 border-b border-slate-100 bg-slate-50/60">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-purple-600" /> Resumo do Gemini
@@ -1332,8 +1351,8 @@ export default function App() {
                   <MessageSquareQuote className="w-4 h-4" />
                 </div>
                 <div>
-                  <h2 className="text-sm font-semibold">Editar Modelos de Mensagens</h2>
-                  <p className="text-[11px] text-slate-400">Acesso da Equipe de Atendimento</p>
+                  <h2 className="text-sm font-semibold">Editar e Ordenar Modelos de Mensagens</h2>
+                  <p className="text-[11px] text-slate-400">Arraste os cartões ou use as setas para definir a ordem dos atalhos</p>
                 </div>
               </div>
               <button 
@@ -1386,7 +1405,7 @@ export default function App() {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between gap-3 bg-slate-800/50 p-3 rounded-lg border border-slate-800">
                     <p className="text-xs text-slate-400">
-                      💡 Dica: Use a tag <strong>{'{nome}'}</strong> no texto para inserir automaticamente o primeiro nome do paciente.
+                      💡 Use <strong>{'{nome}'}</strong> para inserir o primeiro nome do paciente. Arraste pelo ícone <strong>⋮⋮</strong> para reordenar.
                     </p>
                     <button
                       type="button"
@@ -1397,26 +1416,75 @@ export default function App() {
                     </button>
                   </div>
 
-                  <div className="space-y-4">
+                  <div className="space-y-3">
                     {editingReplies.map((item, index) => (
-                      <div key={item.slug} className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-2">
+                      <div
+                        key={item.slug}
+                        draggable
+                        onDragStart={() => setDraggedIndex(index)}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={() => {
+                          if (draggedIndex !== null && draggedIndex !== index) {
+                            moveTemplate(draggedIndex, index);
+                          }
+                          setDraggedIndex(null);
+                        }}
+                        onDragEnd={() => setDraggedIndex(null)}
+                        className={`bg-slate-950 p-3.5 rounded-xl border transition space-y-2 ${
+                          draggedIndex === index
+                            ? 'border-emerald-500 opacity-60'
+                            : 'border-slate-800 hover:border-slate-700'
+                        }`}
+                      >
                         <div className="flex items-center justify-between gap-2">
-                          <input
-                            type="text"
-                            value={item.title}
-                            onChange={(e) => {
-                              const updated = [...editingReplies];
-                              updated[index].title = e.target.value;
-                              setEditingReplies(updated);
-                            }}
-                            className="bg-transparent font-semibold text-xs text-emerald-400 border-b border-transparent hover:border-slate-700 focus:border-emerald-500 focus:outline-none px-1 flex-1"
-                          />
-                          <div className="flex items-center gap-2 shrink-0">
-                            <span className="text-[10px] text-slate-500 font-mono">slug: {item.slug}</span>
+                          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                            <span
+                              className="cursor-grab active:cursor-grabbing text-slate-500 hover:text-emerald-400 p-1 rounded"
+                              title="Arraste para reordenar"
+                            >
+                              <GripVertical className="w-4 h-4" />
+                            </span>
+                            <span className="text-[10px] font-bold text-slate-500 w-4 text-center">
+                              {index + 1}.
+                            </span>
+                            <input
+                              type="text"
+                              value={item.title}
+                              onChange={(e) => {
+                                const updated = [...editingReplies];
+                                updated[index].title = e.target.value;
+                                setEditingReplies(updated);
+                              }}
+                              className="bg-transparent font-semibold text-xs text-emerald-400 border-b border-transparent hover:border-slate-700 focus:border-emerald-500 focus:outline-none px-1 flex-1 min-w-0"
+                            />
+                          </div>
+
+                          <div className="flex items-center gap-1 shrink-0">
+                            <span className="hidden sm:inline text-[10px] text-slate-600 font-mono mr-1">
+                              {item.slug}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => moveTemplate(index, index - 1)}
+                              disabled={index === 0}
+                              className="p-1 rounded text-slate-500 hover:text-white hover:bg-slate-800 disabled:opacity-30 transition"
+                              title="Mover para cima"
+                            >
+                              <ArrowUp className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => moveTemplate(index, index + 1)}
+                              disabled={index === editingReplies.length - 1}
+                              className="p-1 rounded text-slate-500 hover:text-white hover:bg-slate-800 disabled:opacity-30 transition"
+                              title="Mover para baixo"
+                            >
+                              <ArrowDown className="w-3.5 h-3.5" />
+                            </button>
                             <button
                               type="button"
                               onClick={() => handleRemoveTemplate(index)}
-                              className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-rose-950/40 transition"
+                              className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-rose-950/40 transition ml-1"
                               title="Remover este atalho"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -1441,7 +1509,7 @@ export default function App() {
                     <div>
                       {templatesSaveSuccess && (
                         <span className="text-emerald-400 font-semibold text-xs flex items-center gap-1">
-                          <Check className="w-3.5 h-3.5" /> Modelos atualizados com sucesso no Supabase!
+                          <Check className="w-3.5 h-3.5" /> Ordem e modelos salvos com sucesso no Supabase!
                         </span>
                       )}
                     </div>
