@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { 
   Search, Bot, CalendarCheck, CalendarX, Send, AlertCircle, Copy, Sparkles, RefreshCw,
   Settings, Lock, KeyRound, Check, X, ShieldAlert, Clock, MessageSquareQuote, 
-  Edit3, Download, FileSpreadsheet, LogOut, Mail, Volume2, VolumeX, Archive, HelpCircle
+  Edit3, Download, FileSpreadsheet, LogOut, Mail, Volume2, VolumeX, Archive, HelpCircle,
+  Plus, Trash2
 } from 'lucide-react';
 import { supabase } from './supabase';
 
@@ -62,27 +63,51 @@ const DEFAULT_QUICK_REPLIES: QuickReply[] = [
   },
   {
     id: '3',
-    slug: 'dados_receita',
-    title: 'Dados da Receita',
-    category: 'atendimento',
-    content: 'Para que possamos emitir ou validar a sua receita/pedido médico, por favor confirme:\n- Nome completo:\n- CPF:\n- Data de nascimento:\n- Endereço completo com CEP:\n- Farmácia ou medicação necessária:',
+    slug: 'formas_pagamento',
+    title: 'Formas de Pagamento',
+    category: 'financeiro',
+    content: 'Olá, {nome}! Sobre as formas de pagamento, aceitamos *Pix* ou *cartão de crédito em até 3x* (sem juros).\n\nAssim que definirmos o melhor dia e horário para você, eu te envio o link de pagamento ou a chave Pix para confirmarmos o seu agendamento.',
     display_order: 3
   },
   {
     id: '4',
-    slug: 'horarios_savassi',
-    title: 'Horários Savassi',
+    slug: 'como_funciona_exames',
+    title: 'Como Funciona (Exames)',
     category: 'agendamento',
-    content: 'O Dr. Cristiano realiza os atendimentos presenciais na Savassi (Belo Horizonte) às terças e quintas-feiras, com horários agendados para garantir uma avaliação aprofundada e sem pressa. Gostaria de verificar as opções disponíveis para esta semana ou para a próxima?',
+    content: '{nome}, como a consulta do Dr. Cristiano é bastante aprofundada, é fundamental que você já leve seus exames iniciais prontos para analisarmos tudo juntos no dia.\n\nFunciona assim:\n1️⃣ *Cadastro e Horário:* Você me envia seus dados e escolhemos o melhor dia na agenda.\n2️⃣ *Confirmação:* Você realiza o pagamento da consulta para reservar o seu horário.\n3️⃣ *Guia de Exames:* Assim que o horário estiver confirmado, já te envio o pedido médico do Dr. Cristiano para você fazer os exames pelo seu convênio ou laboratório de preferência antes da consulta.',
     display_order: 4
   },
   {
     id: '5',
+    slug: 'dados_cadastro',
+    title: 'Dados para Cadastro',
+    category: 'agendamento',
+    content: 'Para eu gerar seu prontuário e preparar a reserva do horário, por favor me envie os dados abaixo:\n\n*Nome completo:*\n*CPF:*\n*Data de nascimento:*\n*E-mail:*\n*CEP:*\n*Endereço completo (com número):*',
+    display_order: 5
+  },
+  {
+    id: '6',
+    slug: 'dados_receita',
+    title: 'Dados da Receita',
+    category: 'atendimento',
+    content: 'Para que possamos emitir ou validar a sua receita/pedido médico, por favor confirme:\n- Nome completo:\n- CPF:\n- Data de nascimento:\n- Endereço completo com CEP:\n- Farmácia ou medicação necessária:',
+    display_order: 6
+  },
+  {
+    id: '7',
+    slug: 'horarios_savassi',
+    title: 'Horários Savassi',
+    category: 'agendamento',
+    content: 'O Dr. Cristiano realiza os atendimentos presenciais na Savassi (Belo Horizonte) às terças e quintas-feiras, com horários agendados para garantir uma avaliação aprofundada e sem pressa. Gostaria de verificar as opções disponíveis para esta semana ou para a próxima?',
+    display_order: 7
+  },
+  {
+    id: '8',
     slug: 'regra_reembolso',
     title: 'Regra de Reembolso',
     category: 'financeiro',
     content: 'O atendimento do Dr. Cristiano é exclusivamente particular, mas emitimos nota fiscal e relatório médico completo com todos os critérios exigidos pelas operadoras para que você solicite o reembolso diretamente ao seu plano de saúde. A maioria dos convênios oferece essa modalidade!',
-    display_order: 5
+    display_order: 8
   }
 ];
 
@@ -185,6 +210,7 @@ export default function App() {
   const [operatorPasswordInput, setOperatorPasswordInput] = useState('');
   const [operatorPasswordError, setOperatorPasswordError] = useState('');
   const [editingReplies, setEditingReplies] = useState<QuickReply[]>(DEFAULT_QUICK_REPLIES);
+  const [deletedSlugs, setDeletedSlugs] = useState<string[]>([]);
   const [isSavingTemplates, setIsSavingTemplates] = useState(false);
   const [templatesSaveSuccess, setTemplatesSaveSuccess] = useState(false);
 
@@ -328,9 +354,16 @@ export default function App() {
       .order('display_order', { ascending: true });
 
     if (!error && data && data.length > 0) {
-      setQuickReplies(data as QuickReply[]);
-      setEditingReplies(data as QuickReply[]);
+      const dbReplies = data as QuickReply[];
+      const existingSlugs = new Set(dbReplies.map((r) => r.slug));
+      const missingDefaults = DEFAULT_QUICK_REPLIES.filter((d) => !existingSlugs.has(d.slug));
+      const merged = [...dbReplies, ...missingDefaults].sort(
+        (a, b) => (a.display_order || 99) - (b.display_order || 99)
+      );
+      setQuickReplies(merged);
+      setEditingReplies(merged);
     } else {
+      setQuickReplies(DEFAULT_QUICK_REPLIES);
       setEditingReplies(DEFAULT_QUICK_REPLIES);
     }
   };
@@ -567,17 +600,52 @@ export default function App() {
     setTimeout(() => setSaveSuccess(false), 3000);
   };
 
+  const handleAddTemplate = () => {
+    const nextOrder = editingReplies.length + 1;
+    const uniqueSlug = `atalho_${Date.now()}`;
+    setEditingReplies([
+      ...editingReplies,
+      {
+        id: uniqueSlug,
+        slug: uniqueSlug,
+        title: `Novo Atalho ${nextOrder}`,
+        category: 'atendimento',
+        content: 'Olá, {nome}! ',
+        display_order: nextOrder
+      }
+    ]);
+  };
+
+  const handleRemoveTemplate = (index: number) => {
+    const item = editingReplies[index];
+    if (item?.slug) {
+      setDeletedSlugs((prev) => [...prev, item.slug]);
+    }
+    setEditingReplies(editingReplies.filter((_, i) => i !== index));
+  };
+
   const handleSaveTemplates = async () => {
     setIsSavingTemplates(true);
     setTemplatesSaveSuccess(false);
 
-    for (const item of editingReplies) {
+    if (deletedSlugs.length > 0) {
+      await supabase
+        .from('quick_replies')
+        .delete()
+        .in('slug', deletedSlugs);
+      setDeletedSlugs([]);
+    }
+
+    for (let i = 0; i < editingReplies.length; i++) {
+      const item = editingReplies[i];
       await supabase
         .from('quick_replies')
         .upsert({
           slug: item.slug,
           title: item.title,
           content: item.content,
+          category: item.category || 'atendimento',
+          display_order: i + 1,
           updated_at: new Date().toISOString()
         }, { onConflict: 'slug' });
     }
@@ -1150,6 +1218,7 @@ export default function App() {
                 <button
                   onClick={() => {
                     setEditingReplies(quickReplies);
+                    setDeletedSlugs([]);
                     setIsTemplatesModalOpen(true);
                   }}
                   className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition ml-auto shrink-0"
@@ -1315,14 +1384,23 @@ export default function App() {
                 </form>
               ) : (
                 <div className="space-y-4">
-                  <p className="text-xs text-slate-400 bg-slate-800/50 p-3 rounded-lg border border-slate-800">
-                    💡 Dica: Use a tag <strong>{'{nome}'}</strong> no texto para inserir automaticamente o primeiro nome do paciente.
-                  </p>
+                  <div className="flex items-center justify-between gap-3 bg-slate-800/50 p-3 rounded-lg border border-slate-800">
+                    <p className="text-xs text-slate-400">
+                      💡 Dica: Use a tag <strong>{'{nome}'}</strong> no texto para inserir automaticamente o primeiro nome do paciente.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleAddTemplate}
+                      className="bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-emerald-500/40 font-semibold px-3 py-1.5 rounded-lg text-xs transition flex items-center gap-1.5 shrink-0"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Novo Atalho
+                    </button>
+                  </div>
 
                   <div className="space-y-4">
                     {editingReplies.map((item, index) => (
                       <div key={item.slug} className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-2">
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between gap-2">
                           <input
                             type="text"
                             value={item.title}
@@ -1331,9 +1409,19 @@ export default function App() {
                               updated[index].title = e.target.value;
                               setEditingReplies(updated);
                             }}
-                            className="bg-transparent font-semibold text-xs text-emerald-400 border-b border-transparent hover:border-slate-700 focus:border-emerald-500 focus:outline-none px-1"
+                            className="bg-transparent font-semibold text-xs text-emerald-400 border-b border-transparent hover:border-slate-700 focus:border-emerald-500 focus:outline-none px-1 flex-1"
                           />
-                          <span className="text-[10px] text-slate-500 font-mono">slug: {item.slug}</span>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-[10px] text-slate-500 font-mono">slug: {item.slug}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveTemplate(index)}
+                              className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-rose-950/40 transition"
+                              title="Remover este atalho"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
                         <textarea
                           rows={3}
