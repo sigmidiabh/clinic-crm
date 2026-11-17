@@ -55,10 +55,10 @@ const DEFAULT_QUICK_REPLIES: QuickReply[] = [
   },
   {
     id: '2',
-    slug: 'desapego_positivo',
-    title: 'Desapego Positivo (Manual)',
+    slug: 'pec_gancho_clinico',
+    title: 'PEC Gancho Clínico (24h-48h)',
     category: 'follow_up',
-    content: 'Olá, {nome}!\n\nComo não tive seu retorno, imaginei que tenha adiado a busca pela consulta por enquanto, e está tudo bem.\n\nVou arquivar seu contato por aqui para não te incomodar com novas mensagens.\n\nSe em algum momento quiser retomar o cuidado, é só me chamar por este canal.\n\nCuide-se!',
+    content: 'Oi, {nome}, tudo bem? Poliana por aqui. O Dr. Cristiano me pediu para verificar se você conseguiu tirar todas as suas dúvidas sobre o Programa de Emagrecimento Consciente ou se ficou alguma questão sobre o formato do atendimento. Se preferir, estou à disposição!',
     display_order: 2
   },
   {
