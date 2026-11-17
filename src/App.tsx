@@ -44,6 +44,40 @@ interface QuickReply {
   display_order: number;
 }
 
+const PILL_COLOR_OPTIONS = [
+  {
+    key: 'follow_up',
+    label: 'Azul (Follow-up)',
+    dotClass: 'bg-blue-500',
+    pillClass: 'bg-blue-50 hover:bg-blue-100 border-blue-200 hover:border-blue-300 text-blue-800'
+  },
+  {
+    key: 'atendimento',
+    label: 'Verde (Cadastro / Clínico)',
+    dotClass: 'bg-emerald-500',
+    pillClass: 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 hover:border-emerald-300 text-emerald-800'
+  },
+  {
+    key: 'financeiro',
+    label: 'Âmbar (Financeiro)',
+    dotClass: 'bg-amber-500',
+    pillClass: 'bg-amber-50 hover:bg-amber-100 border-amber-200 hover:border-amber-300 text-amber-800'
+  },
+  {
+    key: 'agendamento',
+    label: 'Roxo (Agenda)',
+    dotClass: 'bg-purple-500',
+    pillClass: 'bg-purple-50 hover:bg-purple-100 border-purple-200 hover:border-purple-300 text-purple-800'
+  }
+];
+
+function getPillColorClass(category?: string): string {
+  const found = PILL_COLOR_OPTIONS.find((opt) => opt.key === category);
+  return found
+    ? found.pillClass
+    : 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 hover:border-emerald-300 text-emerald-800';
+}
+
 const DEFAULT_QUICK_REPLIES: QuickReply[] = [
   {
     id: '1',
@@ -73,7 +107,7 @@ const DEFAULT_QUICK_REPLIES: QuickReply[] = [
     id: '4',
     slug: 'como_funciona_exames',
     title: 'Como Funciona (Exames)',
-    category: 'agendamento',
+    category: 'atendimento',
     content: '{nome}, como a consulta do Dr. Cristiano é bastante aprofundada, é fundamental que você já leve seus exames iniciais prontos para analisarmos tudo juntos no dia.\n\nFunciona assim:\n1️⃣ *Cadastro e Horário:* Você me envia seus dados e escolhemos o melhor dia na agenda.\n2️⃣ *Confirmação:* Você realiza o pagamento da consulta para reservar o seu horário.\n3️⃣ *Guia de Exames:* Assim que o horário estiver confirmado, já te envio o pedido médico do Dr. Cristiano para você fazer os exames pelo seu convênio ou laboratório de preferência antes da consulta.',
     display_order: 4
   },
@@ -81,7 +115,7 @@ const DEFAULT_QUICK_REPLIES: QuickReply[] = [
     id: '5',
     slug: 'dados_cadastro',
     title: 'Dados para Cadastro',
-    category: 'agendamento',
+    category: 'atendimento',
     content: 'Para eu gerar seu prontuário e preparar a reserva do horário, por favor me envie os dados abaixo:\n\n*Nome completo:*\n*CPF:*\n*Data de nascimento:*\n*E-mail:*\n*CEP:*\n*Endereço completo (com número):*',
     display_order: 5
   },
@@ -1172,7 +1206,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* ÁREA DE MENSAGENS (flex-1 min-h-0 ajusta sua altura automaticamente) */}
+              {/* ÁREA DE MENSAGENS */}
               <div className="flex-1 min-h-0 px-5 py-4 overflow-y-auto space-y-3">
                 {messages.map(msg => {
                   const role = getSenderRole(msg.sender);
@@ -1209,7 +1243,7 @@ export default function App() {
                 <div ref={messagesEndRef} />
               </div>
 
-              {/* ATALHOS RÁPIDOS DINÂMICOS (flex-wrap para caber sem cortar e mostrar todos os atalhos) */}
+              {/* ATALHOS RÁPIDOS COLORIDOS POR CATEGORIA */}
               <div className="bg-slate-50 border-t border-slate-200 px-4 py-2.5 shrink-0 max-h-28 overflow-y-auto">
                 <div className="flex items-center flex-wrap gap-1.5">
                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 mr-1">
@@ -1220,7 +1254,7 @@ export default function App() {
                     <button 
                       key={qr.slug}
                       onClick={() => handleInsertQuickReply(qr.content)}
-                      className="px-2.5 py-1 bg-white hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 rounded-full text-[11px] text-slate-700 hover:text-emerald-800 transition font-medium shadow-2xs"
+                      className={`px-2.5 py-1 border rounded-full text-[11px] transition font-medium shadow-2xs ${getPillColorClass(qr.category)}`}
                     >
                       {qr.title}
                     </button>
@@ -1233,7 +1267,7 @@ export default function App() {
                       setIsTemplatesModalOpen(true);
                     }}
                     className="p-1.5 rounded-full text-slate-500 hover:text-slate-800 hover:bg-slate-200 transition ml-auto flex items-center gap-1 text-[10px] font-medium"
-                    title="Editar e Reordenar Modelos de Mensagens"
+                    title="Editar, Colorir e Reordenar Modelos de Mensagens"
                   >
                     <Edit3 className="w-3.5 h-3.5" />
                     <span className="hidden sm:inline">Editar</span>
@@ -1241,7 +1275,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* ENVIAR MENSAGEM (Área ampliada com textarea para textos maiores) */}
+              {/* ENVIAR MENSAGEM */}
               <div className="bg-white p-3.5 border-t border-slate-200 flex items-end gap-2.5 shrink-0">
                 <textarea 
                   rows={3}
@@ -1340,7 +1374,7 @@ export default function App() {
 
       </div>
 
-      {/* MODAL 1: EDIÇÃO DOS MODELOS DE RESPOSTAS RÁPIDAS (OPERADOR) */}
+      {/* MODAL 1: EDIÇÃO, COR E ORDENAÇÃO DOS MODELOS DE RESPOSTAS RÁPIDAS (OPERADOR) */}
       {isTemplatesModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -1351,8 +1385,8 @@ export default function App() {
                   <MessageSquareQuote className="w-4 h-4" />
                 </div>
                 <div>
-                  <h2 className="text-sm font-semibold">Editar e Ordenar Modelos de Mensagens</h2>
-                  <p className="text-[11px] text-slate-400">Arraste os cartões ou use as setas para definir a ordem dos atalhos</p>
+                  <h2 className="text-sm font-semibold">Editar, Colorir e Ordenar Atalhos</h2>
+                  <p className="text-[11px] text-slate-400">Arraste pelo ícone ⋮⋮ para ordenar e escolha a cor de cada pílula</p>
                 </div>
               </div>
               <button 
@@ -1405,7 +1439,7 @@ export default function App() {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between gap-3 bg-slate-800/50 p-3 rounded-lg border border-slate-800">
                     <p className="text-xs text-slate-400">
-                      💡 Use <strong>{'{nome}'}</strong> para inserir o primeiro nome do paciente. Arraste pelo ícone <strong>⋮⋮</strong> para reordenar.
+                      💡 Use <strong>{'{nome}'}</strong> para inserir o primeiro nome do paciente. Escolha a cor pela bolinha ao lado do título.
                     </p>
                     <button
                       type="button"
@@ -1436,8 +1470,8 @@ export default function App() {
                             : 'border-slate-800 hover:border-slate-700'
                         }`}
                       >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <div className="flex items-center gap-1.5 flex-1 min-w-[200px]">
                             <span
                               className="cursor-grab active:cursor-grabbing text-slate-500 hover:text-emerald-400 p-1 rounded"
                               title="Arraste para reordenar"
@@ -1455,14 +1489,35 @@ export default function App() {
                                 updated[index].title = e.target.value;
                                 setEditingReplies(updated);
                               }}
-                              className="bg-transparent font-semibold text-xs text-emerald-400 border-b border-transparent hover:border-slate-700 focus:border-emerald-500 focus:outline-none px-1 flex-1 min-w-0"
+                              className="bg-transparent font-semibold text-xs text-white border-b border-transparent hover:border-slate-700 focus:border-emerald-500 focus:outline-none px-1 flex-1 min-w-0"
                             />
                           </div>
 
-                          <div className="flex items-center gap-1 shrink-0">
-                            <span className="hidden sm:inline text-[10px] text-slate-600 font-mono mr-1">
-                              {item.slug}
-                            </span>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {/* SELETOR DE COR DA PÍLULA */}
+                            <div className="flex items-center gap-1.5 bg-slate-900 px-2 py-1 rounded-lg border border-slate-800">
+                              {PILL_COLOR_OPTIONS.map((opt) => {
+                                const isSelected = (item.category || 'atendimento') === opt.key;
+                                return (
+                                  <button
+                                    key={opt.key}
+                                    type="button"
+                                    onClick={() => {
+                                      const updated = [...editingReplies];
+                                      updated[index].category = opt.key;
+                                      setEditingReplies(updated);
+                                    }}
+                                    className={`w-3.5 h-3.5 rounded-full transition ${opt.dotClass} ${
+                                      isSelected
+                                        ? 'ring-2 ring-white ring-offset-1 ring-offset-slate-900 scale-110'
+                                        : 'opacity-45 hover:opacity-100'
+                                    }`}
+                                    title={`Cor: ${opt.label}`}
+                                  />
+                                );
+                              })}
+                            </div>
+
                             <button
                               type="button"
                               onClick={() => moveTemplate(index, index - 1)}
@@ -1484,7 +1539,7 @@ export default function App() {
                             <button
                               type="button"
                               onClick={() => handleRemoveTemplate(index)}
-                              className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-rose-950/40 transition ml-1"
+                              className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-rose-950/40 transition"
                               title="Remover este atalho"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -1509,7 +1564,7 @@ export default function App() {
                     <div>
                       {templatesSaveSuccess && (
                         <span className="text-emerald-400 font-semibold text-xs flex items-center gap-1">
-                          <Check className="w-3.5 h-3.5" /> Ordem e modelos salvos com sucesso no Supabase!
+                          <Check className="w-3.5 h-3.5" /> Cores, ordem e modelos salvos com sucesso no Supabase!
                         </span>
                       )}
                     </div>
