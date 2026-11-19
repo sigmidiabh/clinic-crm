@@ -3,7 +3,7 @@ import {
   Search, Bot, CalendarCheck, CalendarX, Send, AlertCircle, Copy, Sparkles, RefreshCw,
   Settings, Lock, KeyRound, Check, X, ShieldAlert, Clock, MessageSquareQuote, 
   Edit3, Download, FileSpreadsheet, LogOut, Mail, Volume2, VolumeX, Archive, HelpCircle,
-  Plus, Trash2, GripVertical, ArrowUp, ArrowDown, Paperclip, FileText, ExternalLink
+  Plus, Trash2, GripVertical, ArrowUp, ArrowDown, Paperclip, FileText, ExternalLink, Mic
 } from 'lucide-react';
 import { supabase } from './supabase';
 
@@ -30,6 +30,7 @@ interface Contact {
   triage_complaint: string;
   reimbursement_notice: boolean;
   internal_notes: string;
+  unread_count?: number;
   cadence_stage?: 'recente' | 'gancho_24h' | 'arquivado' | 'concluido';
   hours_inactive?: number;
   days_inactive?: number;
@@ -172,6 +173,12 @@ function formatMediaPreviewText(rawText?: string): string {
   return rawText;
 }
 
+function formatRecordingTimer(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
 async function triggerDirectFileDownload(url: string, suggestedName: string) {
   try {
     const response = await fetch(url);
@@ -237,7 +244,6 @@ function MessageContent({
             />
           </a>
 
-          {/* Barra discreta de ações (Salvar / Abrir / Excluir) */}
           <div className="absolute top-2 right-2 flex items-center gap-1 opacity-85 group-hover:opacity-100 transition">
             <button
               type="button"
@@ -452,7 +458,7 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string>('');
   const selectedIdRef = useRef<string>('');
   const [messages, setMessages] = useState<Message[]>([]);
-  const [filter, setFilter] = useState<'all' | 'waiting' | 'in_progress' | 'ai' | 'scheduled'>('all');
+  const [filter, setFilter] = useState<'all' | 'unread' | 'waiting' | 'in_progress' | 'ai' | 'scheduled'>('all');
   const [cadenceFilter, setCadenceFilter] = useState<'all' | 'gancho_24h' | 'archived'>('all');
   const [search, setSearch] = useState('');
   const [inputText, setInputText] = useState('');
@@ -464,6 +470,14 @@ export default function App() {
   const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
   const [isUploadingMedia, setIsUploadingMedia] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Estados para Gravação Nativa de Áudio (PTT)
+  const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<number | null>(null);
+  const shouldSendRecordedAudioRef = useRef<boolean>(false);
 
   useEffect(() => {
     selectedIdRef.current = selectedId;
@@ -518,6 +532,17 @@ export default function App() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  const markContactAsRead = async (contactId: string) => {
+    if (!contactId) return;
+    setContacts((prev) =>
+      prev.map((c) => (c.id === contactId ? { ...c, unread_count: 0 } : c))
+    );
+    await supabase
+      .from('contacts')
+      .update({ unread_count: 0 })
+      .eq('id', contactId);
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -672,6 +697,9 @@ export default function App() {
               if (prev.some((m) => m.id === newMsg.id)) return prev;
               return [...prev, newMsg];
             });
+            if (role === 'patient' && selectedIdRef.current) {
+              markContactAsRead(selectedIdRef.current);
+            }
           }
 
           fetchContacts();
@@ -721,12 +749,22 @@ export default function App() {
     if (session && selectedId) {
       const contact = contactsRef.current.find((c) => c.id === selectedId);
       fetchMessages(selectedId, contact?.phone);
-      if (contact) setNotes(contact.internal_notes || '');
+      if (contact) {
+        setNotes(contact.internal_notes || '');
+        if ((contact.unread_count || 0) > 0) {
+          markContactAsRead(contact.id);
+        }
+      }
       clearAttachment();
+      cancelAudioRecording();
     }
   }, [session, selectedId]);
 
   const currentContact = contacts.find((c) => c.id === selectedId);
+
+  const unreadContactsCount = contacts.filter(
+    (c) => (c.unread_count || 0) > 0 && c.status !== 'archived'
+  ).length;
 
   const filteredContacts = contacts.filter((contact) => {
     const isSearching = search.trim().length > 0;
@@ -744,6 +782,7 @@ export default function App() {
       return false;
     }
 
+    if (filter === 'unread' && (contact.unread_count || 0) <= 0) return false;
     if (filter === 'waiting' && contact.status !== 'waiting_agent') return false;
     if (filter === 'in_progress' && contact.status !== 'in_progress') return false;
     if (filter === 'ai' && contact.status !== 'with_ai') return false;
@@ -774,6 +813,140 @@ export default function App() {
     setFilePreviewUrl(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
+    }
+  };
+
+  // --- FUNÇÕES DE GRAVAÇÃO NATIVA DE ÁUDIO (PTT) ---
+  const uploadAndSendAudioBlob = async (audioBlob: Blob, mimeType: string) => {
+    const targetContact = contactsRef.current.find((c) => c.id === selectedIdRef.current);
+    if (!targetContact || audioBlob.size < 400) return;
+
+    setIsUploadingMedia(true);
+    try {
+      const cleanPhone = targetContact.phone.replace(/\D/g, '') || 'geral';
+      const ext = mimeType.includes('ogg') ? 'ogg' : mimeType.includes('mp4') ? 'm4a' : 'webm';
+      const storagePath = `${cleanPhone}/${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${ext}`;
+
+      const { error: uploadErr } = await supabase.storage
+        .from('chat-media')
+        .upload(storagePath, audioBlob, {
+          contentType: mimeType || 'audio/webm',
+          upsert: false
+        });
+
+      if (uploadErr) {
+        alert('Erro ao enviar áudio: ' + uploadErr.message);
+        return;
+      }
+
+      const { data: pub } = supabase.storage.from('chat-media').getPublicUrl(storagePath);
+      const publicUrl = pub?.publicUrl;
+
+      if (!publicUrl) {
+        alert('Não foi possível obter a URL pública do áudio.');
+        return;
+      }
+
+      const finalMessageText = `[MEDIA:audio|${publicUrl}]`;
+
+      await supabase.from('messages').insert({
+        contact_id: targetContact.id,
+        phone: targetContact.phone,
+        sender: 'agent',
+        text: finalMessageText,
+      });
+
+      await supabase.from('contacts').update({
+        last_message: formatMediaPreviewText(finalMessageText),
+        status: 'in_progress',
+        unread_count: 0,
+        last_message_at: new Date().toISOString()
+      }).eq('id', targetContact.id);
+
+      setContacts((prev) =>
+        prev.map((c) => (c.id === targetContact.id ? { ...c, unread_count: 0, status: 'in_progress' } : c))
+      );
+
+      fetchMessages(targetContact.id, targetContact.phone);
+    } catch (err: any) {
+      alert('Falha ao enviar áudio gravado: ' + (err?.message || 'Erro desconhecido'));
+    } finally {
+      setIsUploadingMedia(false);
+    }
+  };
+
+  const startAudioRecording = async () => {
+    if (!currentContact || isRecordingAudio || isUploadingMedia) return;
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const preferredTypes = [
+        'audio/ogg;codecs=opus',
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/mp4'
+      ];
+      const chosenMime = preferredTypes.find((t) => MediaRecorder.isTypeSupported(t)) || '';
+      const recorder = chosenMime
+        ? new MediaRecorder(stream, { mimeType: chosenMime })
+        : new MediaRecorder(stream);
+
+      audioChunksRef.current = [];
+      shouldSendRecordedAudioRef.current = false;
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((track) => track.stop());
+        if (recordingTimerRef.current) {
+          window.clearInterval(recordingTimerRef.current);
+          recordingTimerRef.current = null;
+        }
+        setIsRecordingAudio(false);
+        setRecordingSeconds(0);
+
+        if (shouldSendRecordedAudioRef.current && audioChunksRef.current.length > 0) {
+          const finalMime = recorder.mimeType || chosenMime || 'audio/webm';
+          const audioBlob = new Blob(audioChunksRef.current, { type: finalMime });
+          await uploadAndSendAudioBlob(audioBlob, finalMime);
+        }
+        audioChunksRef.current = [];
+      };
+
+      mediaRecorderRef.current = recorder;
+      recorder.start(250);
+      setIsRecordingAudio(true);
+      setRecordingSeconds(0);
+
+      recordingTimerRef.current = window.setInterval(() => {
+        setRecordingSeconds((prev) => prev + 1);
+      }, 1000);
+    } catch (err) {
+      alert('Não foi possível acessar o microfone. Verifique a permissão de áudio do navegador.');
+    }
+  };
+
+  const finishAndSendAudioRecording = () => {
+    if (!mediaRecorderRef.current || mediaRecorderRef.current.state === 'inactive') return;
+    shouldSendRecordedAudioRef.current = true;
+    mediaRecorderRef.current.stop();
+  };
+
+  const cancelAudioRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      shouldSendRecordedAudioRef.current = false;
+      mediaRecorderRef.current.stop();
+    } else {
+      if (recordingTimerRef.current) {
+        window.clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+      setIsRecordingAudio(false);
+      setRecordingSeconds(0);
     }
   };
 
@@ -883,8 +1056,13 @@ export default function App() {
     await supabase.from('contacts').update({
       last_message: formatMediaPreviewText(finalMessageText),
       status: 'in_progress',
+      unread_count: 0,
       last_message_at: new Date().toISOString()
     }).eq('id', currentContact.id);
+
+    setContacts((prev) =>
+      prev.map((c) => (c.id === currentContact.id ? { ...c, unread_count: 0, status: 'in_progress' } : c))
+    );
 
     fetchMessages(currentContact.id, currentContact.phone);
   };
@@ -900,8 +1078,12 @@ export default function App() {
     if (!currentContact) return;
     const newStatus = currentContact.status === 'with_ai' ? 'waiting_agent' : 'with_ai';
     
-    await supabase.from('contacts').update({ status: newStatus }).eq('id', currentContact.id);
-    setContacts(contacts.map(c => c.id === currentContact.id ? { ...c, status: newStatus } : c));
+    await supabase
+      .from('contacts')
+      .update({ status: newStatus, unread_count: 0 })
+      .eq('id', currentContact.id);
+
+    setContacts(contacts.map(c => c.id === currentContact.id ? { ...c, status: newStatus, unread_count: 0 } : c));
   };
 
   const toggleScheduledStatus = async () => {
@@ -913,26 +1095,27 @@ export default function App() {
         .from('contacts')
         .update({
           status: 'in_progress',
+          unread_count: 0,
           last_message_at: new Date().toISOString(),
           desapego_sent_at: null
         })
         .eq('id', currentContact.id);
 
-      setContacts(contacts.map(c => c.id === currentContact.id ? { ...c, status: 'in_progress' } : c));
+      setContacts(contacts.map(c => c.id === currentContact.id ? { ...c, status: 'in_progress', unread_count: 0 } : c));
     } else {
       await supabase
         .from('contacts')
-        .update({ status: 'scheduled' })
+        .update({ status: 'scheduled', unread_count: 0 })
         .eq('id', currentContact.id);
 
-      setContacts(contacts.map(c => c.id === currentContact.id ? { ...c, status: 'scheduled' } : c));
+      setContacts(contacts.map(c => c.id === currentContact.id ? { ...c, status: 'scheduled', unread_count: 0 } : c));
     }
   };
 
   const markAsArchived = async () => {
     if (!currentContact) return;
-    await supabase.from('contacts').update({ status: 'archived' }).eq('id', currentContact.id);
-    setContacts(contacts.map(c => c.id === currentContact.id ? { ...c, status: 'archived' } : c));
+    await supabase.from('contacts').update({ status: 'archived', unread_count: 0 }).eq('id', currentContact.id);
+    setContacts(contacts.map(c => c.id === currentContact.id ? { ...c, status: 'archived', unread_count: 0 } : c));
   };
 
   const handleToggleSound = () => {
@@ -1336,6 +1519,18 @@ export default function App() {
             
             <div className="flex gap-1 overflow-x-auto pb-0.5">
               <button 
+                onClick={() => { setFilter('unread'); setCadenceFilter('all'); }} 
+                className={
+                  filter === 'unread' && cadenceFilter !== 'archived'
+                    ? 'px-2 py-1 rounded-md text-[10px] font-bold whitespace-nowrap transition bg-emerald-600 text-white flex items-center gap-1'
+                    : unreadContactsCount > 0
+                    ? 'px-2 py-1 rounded-md text-[10px] font-bold whitespace-nowrap transition bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 flex items-center gap-1'
+                    : 'px-2 py-1 rounded-md text-[10px] font-semibold whitespace-nowrap transition bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }
+              >
+                Não lidas ({unreadContactsCount})
+              </button>
+              <button 
                 onClick={() => { setFilter('waiting'); setCadenceFilter('all'); }} 
                 className={filter === 'waiting' && cadenceFilter !== 'archived' ? 'px-2 py-1 rounded-md text-[10px] font-semibold whitespace-nowrap transition bg-amber-600 text-white' : 'px-2 py-1 rounded-md text-[10px] font-semibold whitespace-nowrap transition bg-slate-100 text-slate-600 hover:bg-slate-200'}
               >
@@ -1406,66 +1601,102 @@ export default function App() {
             ) : filteredContacts.length === 0 ? (
               <div className="p-6 text-center text-xs text-slate-400">Nenhum contacto encontrado nesta fila.</div>
             ) : (
-              filteredContacts.map(contact => (
-                <div 
-                  key={contact.id}
-                  onClick={() => {
-                    setSelectedId(contact.id);
-                    selectedIdRef.current = contact.id;
-                    fetchMessages(contact.id, contact.phone);
-                  }}
-                  className={selectedId === contact.id ? 'p-3.5 cursor-pointer transition bg-emerald-50/60 border-l-4 border-emerald-600' : 'p-3.5 cursor-pointer transition hover:bg-slate-50'}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-bold text-slate-900">{contact.name}</span>
-                    <span className="text-[10px] text-slate-400">{contact.phone}</span>
-                  </div>
-                  <p className="text-xs text-slate-500 truncate mb-2">{formatMediaPreviewText(contact.last_message)}</p>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
-                      {contact.tag}
-                    </span>
-                    
-                    {contact.status === 'waiting_agent' && (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-200">
-                        Aguardando Poliana
-                      </span>
-                    )}
-                    {contact.status === 'in_progress' && (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                        Atendimento Poliana
-                      </span>
-                    )}
-                    {contact.status === 'with_ai' && (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-700 border border-purple-200 flex items-center gap-1">
-                        <Bot className="w-3 h-3" /> Marina Ativa
-                      </span>
-                    )}
-                    {contact.status === 'scheduled' && (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-800 border border-blue-200">
-                        Agendado
-                      </span>
-                    )}
-                    {contact.status === 'archived' && (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-200 text-slate-700 border border-slate-300">
-                        Arquivado (Desapego)
-                      </span>
-                    )}
+              filteredContacts.map(contact => {
+                const unread = contact.unread_count || 0;
+                const isUnread = unread > 0;
+                const isSelected = selectedId === contact.id;
 
-                    {contact.cadence_stage === 'gancho_24h' && contact.status !== 'scheduled' && contact.status !== 'archived' && (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold inline-flex items-center gap-1 border bg-blue-50 text-blue-700 border-blue-200">
-                        🕒 Gancho Clínico ({Math.floor(contact.hours_inactive || 24)}h)
-                      </span>
-                    )}
+                let cardClass = 'p-3.5 cursor-pointer transition ';
+                if (isSelected) {
+                  cardClass += 'bg-emerald-50/80 border-l-4 border-emerald-600';
+                } else if (isUnread) {
+                  cardClass += 'bg-emerald-50/70 hover:bg-emerald-100/70 border-l-4 border-emerald-500';
+                } else {
+                  cardClass += 'hover:bg-slate-50';
+                }
 
-                    {contact.days_inactive !== undefined && contact.days_inactive >= 3 && contact.status !== 'scheduled' && contact.status !== 'archived' && (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium inline-flex items-center gap-1 border bg-amber-50 text-amber-800 border-amber-200">
-                        🕒 {contact.days_inactive}d sem resposta
+                return (
+                  <div 
+                    key={contact.id}
+                    onClick={() => {
+                      setSelectedId(contact.id);
+                      selectedIdRef.current = contact.id;
+                      if (isUnread) {
+                        markContactAsRead(contact.id);
+                      }
+                      fetchMessages(contact.id, contact.phone);
+                    }}
+                    className={cardClass}
+                  >
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span className="text-xs font-bold text-slate-900 truncate">{contact.name}</span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="text-[10px] text-slate-400">{contact.phone}</span>
+                        {isUnread && (
+                          <span
+                            className="min-w-[18px] h-[18px] px-1.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold flex items-center justify-center shadow-2xs"
+                            title={`${unread} mensagem(ns) não lida(s)`}
+                          >
+                            {unread}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <p
+                      className={
+                        isUnread
+                          ? 'text-xs font-semibold text-slate-800 truncate mb-2'
+                          : 'text-xs text-slate-500 truncate mb-2'
+                      }
+                    >
+                      {formatMediaPreviewText(contact.last_message)}
+                    </p>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                        {contact.tag}
                       </span>
-                    )}
+                      
+                      {contact.status === 'waiting_agent' && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-200">
+                          Aguardando Poliana
+                        </span>
+                      )}
+                      {contact.status === 'in_progress' && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                          Atendimento Poliana
+                        </span>
+                      )}
+                      {contact.status === 'with_ai' && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-700 border border-purple-200 flex items-center gap-1">
+                          <Bot className="w-3 h-3" /> Marina Ativa
+                        </span>
+                      )}
+                      {contact.status === 'scheduled' && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-800 border border-blue-200">
+                          Agendado
+                        </span>
+                      )}
+                      {contact.status === 'archived' && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-200 text-slate-700 border border-slate-300">
+                          Arquivado (Desapego)
+                        </span>
+                      )}
+
+                      {contact.cadence_stage === 'gancho_24h' && contact.status !== 'scheduled' && contact.status !== 'archived' && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold inline-flex items-center gap-1 border bg-blue-50 text-blue-700 border-blue-200">
+                          🕒 Gancho Clínico ({Math.floor(contact.hours_inactive || 24)}h)
+                        </span>
+                      )}
+
+                      {contact.days_inactive !== undefined && contact.days_inactive >= 3 && contact.status !== 'scheduled' && contact.status !== 'archived' && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-medium inline-flex items-center gap-1 border bg-amber-50 text-amber-800 border-amber-200">
+                          🕒 {contact.days_inactive}d sem resposta
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </aside>
@@ -1643,7 +1874,7 @@ export default function App() {
               </div>
 
               {/* PRÉ-VISUALIZAÇÃO DO ARQUIVO ANEXADO */}
-              {selectedFile && (
+              {selectedFile && !isRecordingAudio && (
                 <div className="bg-emerald-50/90 border-t border-emerald-200 px-4 py-2 flex items-center justify-between gap-3 shrink-0">
                   <div className="flex items-center gap-2.5 min-w-0">
                     {filePreviewUrl ? (
@@ -1675,58 +1906,100 @@ export default function App() {
                 </div>
               )}
 
-              {/* ENVIAR MENSAGEM / ANEXO */}
-              <div className="bg-white p-3.5 border-t border-slate-200 flex items-end gap-2.5 shrink-0">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*,.pdf,.doc,.docx"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) handleAttachFile(file);
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isUploadingMedia}
-                  className="bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 border border-slate-200 w-10 h-10 rounded-xl flex items-center justify-center transition shrink-0"
-                  title="Anexar imagem ou documento (PDF)"
-                >
-                  <Paperclip className="w-4 h-4" />
-                </button>
-                <textarea 
-                  rows={3}
-                  value={inputText}
-                  onChange={e => setInputText(e.target.value)}
-                  onPaste={handlePasteInTextarea}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSendMessage();
+              {/* ENVIAR MENSAGEM / ANEXO / ÁUDIO */}
+              {isRecordingAudio ? (
+                <div className="bg-rose-50/90 p-3.5 border-t border-rose-200 flex items-center justify-between gap-3 shrink-0">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-3 h-3 rounded-full bg-rose-600 animate-ping" />
+                    <span className="text-xs font-bold text-rose-800">
+                      Gravando áudio... {formatRecordingTimer(recordingSeconds)}
+                    </span>
+                    <span className="hidden sm:inline text-[11px] text-rose-600">
+                      Fale próximo ao microfone do computador
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={cancelAudioRecording}
+                      className="px-3 py-2 rounded-xl text-xs font-semibold bg-white hover:bg-rose-100 text-rose-700 border border-rose-300 transition flex items-center gap-1.5"
+                      title="Descartar gravação"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={finishAndSendAudioRecording}
+                      className="px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition flex items-center gap-1.5"
+                      title="Finalizar e enviar nota de voz no WhatsApp"
+                    >
+                      <Send className="w-3.5 h-3.5" /> Enviar Áudio
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-white p-3.5 border-t border-slate-200 flex items-end gap-2.5 shrink-0">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*,.pdf,.doc,.docx"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleAttachFile(file);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploadingMedia}
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 border border-slate-200 w-10 h-10 rounded-xl flex items-center justify-center transition shrink-0"
+                    title="Anexar imagem ou documento (PDF)"
+                  >
+                    <Paperclip className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={startAudioRecording}
+                    disabled={isUploadingMedia || Boolean(selectedFile)}
+                    className="bg-slate-100 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 border border-slate-200 hover:border-emerald-300 disabled:opacity-40 w-10 h-10 rounded-xl flex items-center justify-center transition shrink-0"
+                    title="Gravar mensagem de voz pelo microfone"
+                  >
+                    <Mic className="w-4 h-4" />
+                  </button>
+                  <textarea 
+                    rows={3}
+                    value={inputText}
+                    onChange={e => setInputText(e.target.value)}
+                    onPaste={handlePasteInTextarea}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendMessage();
+                      }
+                    }}
+                    placeholder={
+                      selectedFile
+                        ? 'Adicione uma legenda para o arquivo (opcional)...'
+                        : 'Digite a mensagem como Poliana ou cole um print (Ctrl+V)...'
                     }
-                  }}
-                  placeholder={
-                    selectedFile
-                      ? 'Adicione uma legenda para o arquivo (opcional)...'
-                      : 'Digite a mensagem como Poliana ou cole um print (Ctrl+V)...'
-                  }
-                  className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs leading-relaxed focus:outline-none focus:border-emerald-600 transition resize-none"
-                />
-                <button 
-                  onClick={handleSendMessage}
-                  disabled={isUploadingMedia || (!inputText.trim() && !selectedFile)}
-                  className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white w-10 h-10 rounded-xl flex items-center justify-center transition shrink-0 shadow-xs"
-                  title="Enviar mensagem ou arquivo (Enter)"
-                >
-                  {isUploadingMedia ? (
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Send className="w-4 h-4" />
-                  )}
-                </button>
-              </div>
+                    className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs leading-relaxed focus:outline-none focus:border-emerald-600 transition resize-none"
+                  />
+                  <button 
+                    onClick={handleSendMessage}
+                    disabled={isUploadingMedia || (!inputText.trim() && !selectedFile)}
+                    className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white w-10 h-10 rounded-xl flex items-center justify-center transition shrink-0 shadow-xs"
+                    title="Enviar mensagem ou arquivo (Enter)"
+                  >
+                    {isUploadingMedia ? (
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Send className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
+              )}
             </>
           ) : (
             <div className="flex-1 flex items-center justify-center text-xs text-slate-400">
@@ -1923,7 +2196,6 @@ export default function App() {
                           </div>
 
                           <div className="flex items-center gap-2 shrink-0">
-                            {/* SELETOR DE COR DA PÍLULA */}
                             <div className="flex items-center gap-1.5 bg-slate-900 px-2 py-1 rounded-lg border border-slate-800">
                               {PILL_COLOR_OPTIONS.map((opt) => {
                                 const isSelected = (item.category || 'atendimento') === opt.key;
