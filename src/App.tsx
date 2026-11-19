@@ -169,71 +169,178 @@ function formatMediaPreviewText(rawText?: string): string {
   return rawText;
 }
 
-function MessageContent({ text, isAgent }: { text: string; isAgent: boolean }) {
-  const imgMatch = text.match(/^\[MEDIA:image\|([^\]]+)\]\s*(.*)$/s);
+async function triggerDirectFileDownload(url: string, suggestedName: string) {
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = suggestedName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
+  } catch {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+}
+
+function MessageContent({
+  msg,
+  isAgent,
+  onDeleteMedia
+}: {
+  msg: Message;
+  isAgent: boolean;
+  onDeleteMedia: (msg: Message) => Promise<void>;
+}) {
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDeleteClick = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (deleting) return;
+    if (!window.confirm('Deseja excluir esta mídia permanentemente do armazenamento da clínica?')) return;
+    setDeleting(true);
+    try {
+      await onDeleteMedia(msg);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const imgMatch = msg.text.match(/^\[MEDIA:image\|([^\]]+)\]\s*(.*)$/s);
   if (imgMatch) {
     const [, url, caption] = imgMatch;
+    const ext = url.split('.').pop()?.split('?')[0] || 'jpg';
+    const fileName = `imagem_${msg.id.slice(0, 6)}.${ext}`;
+
     return (
       <div className="space-y-1.5">
-        <a
-          href={url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="block overflow-hidden rounded-xl border border-black/10 bg-black/5 group relative"
-          title="Clique para abrir a imagem em tamanho real"
-        >
-          <img
-            src={url}
-            alt="Mídia enviada"
-            className="max-h-64 w-auto max-w-full object-contain rounded-xl transition group-hover:opacity-95"
-            loading="lazy"
-          />
-          <span className="absolute bottom-2 right-2 bg-slate-900/75 text-white text-[10px] px-2 py-0.5 rounded-md opacity-0 group-hover:opacity-100 transition flex items-center gap-1">
-            <ExternalLink className="w-3 h-3" /> Ampliar
-          </span>
-        </a>
+        <div className="relative group rounded-xl overflow-hidden border border-black/10 bg-black/5">
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block"
+            title="Clique para abrir a imagem em tamanho real"
+          >
+            <img
+              src={url}
+              alt="Mídia enviada"
+              className="max-h-64 w-auto max-w-full object-contain rounded-xl transition group-hover:opacity-95"
+              loading="lazy"
+            />
+          </a>
+
+          {/* Barra discreta de ações (Salvar / Abrir / Excluir) */}
+          <div className="absolute top-2 right-2 flex items-center gap-1 opacity-85 group-hover:opacity-100 transition">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                triggerDirectFileDownload(url, fileName);
+              }}
+              className="p-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-900 text-white shadow-sm transition"
+              title="Salvar imagem no computador"
+            >
+              <Download className="w-3.5 h-3.5" />
+            </button>
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-900 text-white shadow-sm transition"
+              title="Abrir em nova aba"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+            <button
+              type="button"
+              onClick={handleDeleteClick}
+              disabled={deleting}
+              className="p-1.5 rounded-lg bg-slate-900/80 hover:bg-rose-600 text-white shadow-sm transition disabled:opacity-50"
+              title="Excluir imagem para liberar espaço"
+            >
+              {deleting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+            </button>
+          </div>
+        </div>
         {caption && <p className="whitespace-pre-wrap">{caption}</p>}
       </div>
     );
   }
 
-  const docMatch = text.match(/^\[MEDIA:document\|([^|\]]+)\|([^\]]+)\]\s*(.*)$/s);
+  const docMatch = msg.text.match(/^\[MEDIA:document\|([^|\]]+)\|([^\]]+)\]\s*(.*)$/s);
   if (docMatch) {
     const [, fileName, url, caption] = docMatch;
     return (
       <div className="space-y-1.5">
-        <a
-          href={url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={`flex items-center gap-2.5 p-2.5 rounded-xl border transition ${
+        <div
+          className={`flex items-center gap-2 p-2.5 rounded-xl border transition ${
             isAgent
-              ? 'bg-emerald-700/60 border-emerald-400/40 hover:bg-emerald-700 text-white'
-              : 'bg-slate-50 border-slate-200 hover:bg-slate-100 text-slate-800'
+              ? 'bg-emerald-700/60 border-emerald-400/40 text-white'
+              : 'bg-slate-50 border-slate-200 text-slate-800'
           }`}
-          title="Clique para abrir ou baixar o arquivo"
         >
-          <div
-            className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-              isAgent ? 'bg-emerald-500/30 text-white' : 'bg-rose-100 text-rose-600'
-            }`}
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2.5 min-w-0 flex-1 group"
+            title="Clique para visualizar o documento"
           >
-            <FileText className="w-4 h-4" />
+            <div
+              className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                isAgent ? 'bg-emerald-500/30 text-white' : 'bg-rose-100 text-rose-600'
+              }`}
+            >
+              <FileText className="w-4 h-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold truncate group-hover:underline">{fileName}</p>
+              <p className={`text-[10px] ${isAgent ? 'text-emerald-200' : 'text-slate-400'}`}>
+                Documento anexado
+              </p>
+            </div>
+          </a>
+
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => triggerDirectFileDownload(url, fileName)}
+              className={`p-1.5 rounded-lg transition ${
+                isAgent
+                  ? 'hover:bg-emerald-600 text-emerald-100 hover:text-white'
+                  : 'hover:bg-slate-200 text-slate-500 hover:text-slate-800'
+              }`}
+              title="Salvar arquivo no computador"
+            >
+              <Download className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={handleDeleteClick}
+              disabled={deleting}
+              className={`p-1.5 rounded-lg transition disabled:opacity-50 ${
+                isAgent
+                  ? 'hover:bg-rose-600 text-emerald-100 hover:text-white'
+                  : 'hover:bg-rose-100 text-slate-400 hover:text-rose-600'
+              }`}
+              title="Excluir arquivo para liberar espaço"
+            >
+              {deleting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+            </button>
           </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold truncate">{fileName}</p>
-            <p className={`text-[10px] ${isAgent ? 'text-emerald-200' : 'text-slate-400'}`}>
-              Clique para visualizar / baixar
-            </p>
-          </div>
-          <Download className={`w-4 h-4 shrink-0 ${isAgent ? 'text-emerald-200' : 'text-slate-400'}`} />
-        </a>
+        </div>
         {caption && <p className="whitespace-pre-wrap">{caption}</p>}
       </div>
     );
   }
 
-  return <p className="whitespace-pre-wrap">{text}</p>;
+  return <p className="whitespace-pre-wrap">{msg.text}</p>;
 }
 
 function playSubtleNotificationChime() {
@@ -532,6 +639,16 @@ export default function App() {
       )
       .on(
         'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'messages' },
+        (payload) => {
+          const updatedMsg = payload.new as Message;
+          setMessages((prev) =>
+            prev.map((m) => (m.id === updatedMsg.id ? { ...m, text: updatedMsg.text } : m))
+          );
+        }
+      )
+      .on(
+        'postgres_changes',
         { event: '*', schema: 'public', table: 'contacts' },
         () => {
           fetchContacts();
@@ -628,6 +745,26 @@ export default function App() {
         }
       }
     }
+  };
+
+  const handleDeleteMediaMessage = async (msg: Message) => {
+    const imgMatch = msg.text.match(/^\[MEDIA:image\|([^\]]+)\]\s*(.*)$/s);
+    const docMatch = msg.text.match(/^\[MEDIA:document\|[^|\]]+\|([^\]]+)\]\s*(.*)$/s);
+    const mediaUrl = imgMatch ? imgMatch[1] : docMatch ? docMatch[1] : null;
+    const caption = imgMatch ? imgMatch[2] : docMatch ? docMatch[2] : '';
+
+    if (mediaUrl && mediaUrl.includes('/chat-media/')) {
+      const storagePath = decodeURIComponent(mediaUrl.split('/chat-media/')[1].split('?')[0]);
+      const { error: storageErr } = await supabase.storage.from('chat-media').remove([storagePath]);
+      if (storageErr) {
+        alert('Aviso ao remover arquivo do Storage: ' + storageErr.message);
+      }
+    }
+
+    const updatedText = `[Mídia removida pelo atendente]${caption ? ' ' + caption : ''}`;
+    await supabase.from('messages').update({ text: updatedText }).eq('id', msg.id);
+
+    setMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, text: updatedText } : m)));
   };
 
   const handleSendMessage = async () => {
@@ -1411,7 +1548,11 @@ export default function App() {
                             Poliana (Secretária)
                           </div>
                         )}
-                        <MessageContent text={msg.text} isAgent={role === 'agent'} />
+                        <MessageContent
+                          msg={msg}
+                          isAgent={role === 'agent'}
+                          onDeleteMedia={handleDeleteMediaMessage}
+                        />
                         <span className={role === 'agent' ? 'block text-[10px] text-right mt-1 text-emerald-100' : 'block text-[10px] text-right mt-1 text-slate-400'}>
                           {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
