@@ -162,6 +162,9 @@ function formatMediaPreviewText(rawText?: string): string {
   if (imgMatch) {
     return imgMatch[1] ? `📷 ${imgMatch[1]}` : '📷 Imagem';
   }
+  if (/^\[MEDIA:audio\|[^\]]+\]/.test(rawText)) {
+    return '🎤 Mensagem de áudio';
+  }
   const docMatch = rawText.match(/^\[MEDIA:document\|([^|\]]+)\|[^\]]+\]\s*(.*)$/s);
   if (docMatch) {
     return docMatch[2] ? `📄 ${docMatch[1]} - ${docMatch[2]}` : `📄 ${docMatch[1]}`;
@@ -269,6 +272,49 @@ function MessageContent({
           </div>
         </div>
         {caption && <p className="whitespace-pre-wrap">{caption}</p>}
+      </div>
+    );
+  }
+
+  const audMatch = msg.text.match(/^\[MEDIA:audio\|([^\]]+)\]\s*(.*)$/s);
+  if (audMatch) {
+    const [, url] = audMatch;
+    const ext = url.split('.').pop()?.split('?')[0] || 'ogg';
+    const fileName = `audio_${msg.id.slice(0, 6)}.${ext}`;
+
+    return (
+      <div className="flex items-center gap-2 min-w-[230px]">
+        <audio
+          controls
+          preload="metadata"
+          src={url}
+          className="h-9 max-w-[210px] rounded-lg"
+        />
+        <button
+          type="button"
+          onClick={() => triggerDirectFileDownload(url, fileName)}
+          className={`p-1.5 rounded-lg transition shrink-0 ${
+            isAgent
+              ? 'hover:bg-emerald-700 text-emerald-100 hover:text-white'
+              : 'hover:bg-slate-100 text-slate-500 hover:text-slate-800'
+          }`}
+          title="Salvar áudio no computador"
+        >
+          <Download className="w-3.5 h-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={handleDeleteClick}
+          disabled={deleting}
+          className={`p-1.5 rounded-lg transition shrink-0 disabled:opacity-50 ${
+            isAgent
+              ? 'hover:bg-rose-600 text-emerald-100 hover:text-white'
+              : 'hover:bg-rose-100 text-slate-400 hover:text-rose-600'
+          }`}
+          title="Excluir áudio para liberar espaço"
+        >
+          {deleting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+        </button>
       </div>
     );
   }
@@ -749,9 +795,10 @@ export default function App() {
 
   const handleDeleteMediaMessage = async (msg: Message) => {
     const imgMatch = msg.text.match(/^\[MEDIA:image\|([^\]]+)\]\s*(.*)$/s);
+    const audMatch = msg.text.match(/^\[MEDIA:audio\|([^\]]+)\]\s*(.*)$/s);
     const docMatch = msg.text.match(/^\[MEDIA:document\|[^|\]]+\|([^\]]+)\]\s*(.*)$/s);
-    const mediaUrl = imgMatch ? imgMatch[1] : docMatch ? docMatch[1] : null;
-    const caption = imgMatch ? imgMatch[2] : docMatch ? docMatch[2] : '';
+    const mediaUrl = imgMatch ? imgMatch[1] : audMatch ? audMatch[1] : docMatch ? docMatch[1] : null;
+    const caption = imgMatch ? imgMatch[2] : audMatch ? audMatch[2] : docMatch ? docMatch[2] : '';
 
     if (mediaUrl && mediaUrl.includes('/chat-media/')) {
       const storagePath = decodeURIComponent(mediaUrl.split('/chat-media/')[1].split('?')[0]);
