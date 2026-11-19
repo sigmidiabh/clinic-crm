@@ -3,7 +3,7 @@ import {
   Search, Bot, CalendarCheck, CalendarX, Send, AlertCircle, Copy, Sparkles, RefreshCw,
   Settings, Lock, KeyRound, Check, X, ShieldAlert, Clock, MessageSquareQuote, 
   Edit3, Download, FileSpreadsheet, LogOut, Mail, Volume2, VolumeX, Archive, HelpCircle,
-  Plus, Trash2, GripVertical, ArrowUp, ArrowDown
+  Plus, Trash2, GripVertical, ArrowUp, ArrowDown, Paperclip, FileText, ExternalLink
 } from 'lucide-react';
 import { supabase } from './supabase';
 
@@ -156,6 +156,86 @@ function getSenderRole(sender?: string): 'patient' | 'bot' | 'agent' {
   return 'patient';
 }
 
+function formatMediaPreviewText(rawText?: string): string {
+  if (!rawText) return 'Sem mensagens';
+  const imgMatch = rawText.match(/^\[MEDIA:image\|[^\]]+\]\s*(.*)$/s);
+  if (imgMatch) {
+    return imgMatch[1] ? `📷 ${imgMatch[1]}` : '📷 Imagem';
+  }
+  const docMatch = rawText.match(/^\[MEDIA:document\|([^|\]]+)\|[^\]]+\]\s*(.*)$/s);
+  if (docMatch) {
+    return docMatch[2] ? `📄 ${docMatch[1]} - ${docMatch[2]}` : `📄 ${docMatch[1]}`;
+  }
+  return rawText;
+}
+
+function MessageContent({ text, isAgent }: { text: string; isAgent: boolean }) {
+  const imgMatch = text.match(/^\[MEDIA:image\|([^\]]+)\]\s*(.*)$/s);
+  if (imgMatch) {
+    const [, url, caption] = imgMatch;
+    return (
+      <div className="space-y-1.5">
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block overflow-hidden rounded-xl border border-black/10 bg-black/5 group relative"
+          title="Clique para abrir a imagem em tamanho real"
+        >
+          <img
+            src={url}
+            alt="Mídia enviada"
+            className="max-h-64 w-auto max-w-full object-contain rounded-xl transition group-hover:opacity-95"
+            loading="lazy"
+          />
+          <span className="absolute bottom-2 right-2 bg-slate-900/75 text-white text-[10px] px-2 py-0.5 rounded-md opacity-0 group-hover:opacity-100 transition flex items-center gap-1">
+            <ExternalLink className="w-3 h-3" /> Ampliar
+          </span>
+        </a>
+        {caption && <p className="whitespace-pre-wrap">{caption}</p>}
+      </div>
+    );
+  }
+
+  const docMatch = text.match(/^\[MEDIA:document\|([^|\]]+)\|([^\]]+)\]\s*(.*)$/s);
+  if (docMatch) {
+    const [, fileName, url, caption] = docMatch;
+    return (
+      <div className="space-y-1.5">
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`flex items-center gap-2.5 p-2.5 rounded-xl border transition ${
+            isAgent
+              ? 'bg-emerald-700/60 border-emerald-400/40 hover:bg-emerald-700 text-white'
+              : 'bg-slate-50 border-slate-200 hover:bg-slate-100 text-slate-800'
+          }`}
+          title="Clique para abrir ou baixar o arquivo"
+        >
+          <div
+            className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+              isAgent ? 'bg-emerald-500/30 text-white' : 'bg-rose-100 text-rose-600'
+            }`}
+          >
+            <FileText className="w-4 h-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold truncate">{fileName}</p>
+            <p className={`text-[10px] ${isAgent ? 'text-emerald-200' : 'text-slate-400'}`}>
+              Clique para visualizar / baixar
+            </p>
+          </div>
+          <Download className={`w-4 h-4 shrink-0 ${isAgent ? 'text-emerald-200' : 'text-slate-400'}`} />
+        </a>
+        {caption && <p className="whitespace-pre-wrap">{caption}</p>}
+      </div>
+    );
+  }
+
+  return <p className="whitespace-pre-wrap">{text}</p>;
+}
+
 function playSubtleNotificationChime() {
   try {
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
@@ -225,6 +305,12 @@ export default function App() {
   const [inputText, setInputText] = useState('');
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(true);
+
+  // Estados para Anexo de Mídia (Imagem / PDF)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
+  const [isUploadingMedia, setIsUploadingMedia] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     selectedIdRef.current = selectedId;
@@ -473,6 +559,7 @@ export default function App() {
       const contact = contactsRef.current.find((c) => c.id === selectedId);
       fetchMessages(selectedId, contact?.phone);
       if (contact) setNotes(contact.internal_notes || '');
+      clearAttachment();
     }
   }, [session, selectedId]);
 
@@ -504,21 +591,113 @@ export default function App() {
     return true;
   });
 
-  const handleSendMessage = async () => {
-    if (!inputText.trim() || !currentContact) return;
+  const handleAttachFile = (file: File) => {
+    if (filePreviewUrl) {
+      URL.revokeObjectURL(filePreviewUrl);
+    }
+    setSelectedFile(file);
+    if (file.type.startsWith('image/')) {
+      setFilePreviewUrl(URL.createObjectURL(file));
+    } else {
+      setFilePreviewUrl(null);
+    }
+  };
 
-    const textToSend = inputText;
+  const clearAttachment = () => {
+    if (filePreviewUrl) {
+      URL.revokeObjectURL(filePreviewUrl);
+    }
+    setSelectedFile(null);
+    setFilePreviewUrl(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handlePasteInTextarea = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith('image/')) {
+        const file = items[i].getAsFile();
+        if (file) {
+          e.preventDefault();
+          const namedFile = new File([file], `print_${Date.now()}.png`, { type: file.type });
+          handleAttachFile(namedFile);
+          break;
+        }
+      }
+    }
+  };
+
+  const handleSendMessage = async () => {
+    if ((!inputText.trim() && !selectedFile) || !currentContact || isUploadingMedia) return;
+
+    const captionText = inputText.trim();
+    const fileToSend = selectedFile;
+
     setInputText('');
+    clearAttachment();
+
+    let finalMessageText = captionText;
+
+    if (fileToSend) {
+      setIsUploadingMedia(true);
+      try {
+        const cleanPhone = currentContact.phone.replace(/\D/g, '') || 'geral';
+        const ext = fileToSend.name.includes('.')
+          ? fileToSend.name.split('.').pop()?.replace(/[^a-zA-Z0-9]/g, '')
+          : fileToSend.type.startsWith('image/')
+          ? 'png'
+          : 'pdf';
+        const storagePath = `${cleanPhone}/${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${ext}`;
+
+        const { error: uploadErr } = await supabase.storage
+          .from('chat-media')
+          .upload(storagePath, fileToSend, {
+            contentType: fileToSend.type || 'application/octet-stream',
+            upsert: false
+          });
+
+        if (uploadErr) {
+          alert('Erro ao enviar arquivo: ' + uploadErr.message);
+          setIsUploadingMedia(false);
+          return;
+        }
+
+        const { data: pub } = supabase.storage.from('chat-media').getPublicUrl(storagePath);
+        const publicUrl = pub?.publicUrl;
+
+        if (!publicUrl) {
+          alert('Não foi possível obter a URL pública do arquivo.');
+          setIsUploadingMedia(false);
+          return;
+        }
+
+        if (fileToSend.type.startsWith('image/')) {
+          finalMessageText = `[MEDIA:image|${publicUrl}]${captionText ? ' ' + captionText : ''}`;
+        } else {
+          const safeName = fileToSend.name.replace(/[|\[\]]/g, '_');
+          finalMessageText = `[MEDIA:document|${safeName}|${publicUrl}]${captionText ? ' ' + captionText : ''}`;
+        }
+      } catch (err: any) {
+        alert('Falha no upload do arquivo: ' + (err?.message || 'Erro desconhecido'));
+        setIsUploadingMedia(false);
+        return;
+      } finally {
+        setIsUploadingMedia(false);
+      }
+    }
 
     await supabase.from('messages').insert({
       contact_id: currentContact.id,
       phone: currentContact.phone,
       sender: 'agent',
-      text: textToSend,
+      text: finalMessageText,
     });
 
     await supabase.from('contacts').update({
-      last_message: textToSend,
+      last_message: formatMediaPreviewText(finalMessageText),
       status: 'in_progress',
       last_message_at: new Date().toISOString()
     }).eq('id', currentContact.id);
@@ -720,7 +899,7 @@ export default function App() {
       if (role === 'bot') senderLabel = '[MARINA - IA]';
       if (role === 'agent') senderLabel = '[POLIANA - SECRETÁRIA]';
 
-      content += `${time} - ${senderLabel}:\n${msg.text}\n\n`;
+      content += `${time} - ${senderLabel}:\n${formatMediaPreviewText(msg.text)}\n\n`;
     });
 
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
@@ -783,7 +962,7 @@ export default function App() {
 
         const intent = (item.contacts?.triage_intent || '').replace(/"/g, '""');
         const modality = (item.contacts?.triage_modality || '').replace(/"/g, '""');
-        const messageText = (item.text || '').replace(/"/g, '""').replace(/\n/g, ' ');
+        const messageText = formatMediaPreviewText(item.text || '').replace(/"/g, '""').replace(/\n/g, ' ');
 
         return `"${date}","${name}","${phone}","${status}","${senderRole}","${intent}","${modality}","${messageText}"`;
       });
@@ -1057,7 +1236,7 @@ export default function App() {
                     <span className="text-xs font-bold text-slate-900">{contact.name}</span>
                     <span className="text-[10px] text-slate-400">{contact.phone}</span>
                   </div>
-                  <p className="text-xs text-slate-500 truncate mb-2">{contact.last_message || 'Sem mensagens'}</p>
+                  <p className="text-xs text-slate-500 truncate mb-2">{formatMediaPreviewText(contact.last_message)}</p>
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
                       {contact.tag}
@@ -1232,7 +1411,7 @@ export default function App() {
                             Poliana (Secretária)
                           </div>
                         )}
-                        <p className="whitespace-pre-wrap">{msg.text}</p>
+                        <MessageContent text={msg.text} isAgent={role === 'agent'} />
                         <span className={role === 'agent' ? 'block text-[10px] text-right mt-1 text-emerald-100' : 'block text-[10px] text-right mt-1 text-slate-400'}>
                           {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
@@ -1275,27 +1454,89 @@ export default function App() {
                 </div>
               </div>
 
-              {/* ENVIAR MENSAGEM */}
+              {/* PRÉ-VISUALIZAÇÃO DO ARQUIVO ANEXADO */}
+              {selectedFile && (
+                <div className="bg-emerald-50/90 border-t border-emerald-200 px-4 py-2 flex items-center justify-between gap-3 shrink-0">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    {filePreviewUrl ? (
+                      <img
+                        src={filePreviewUrl}
+                        alt="Prévia do anexo"
+                        className="w-10 h-10 rounded-lg object-cover border border-emerald-300 shrink-0"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-lg bg-rose-100 text-rose-600 border border-rose-200 flex items-center justify-center shrink-0">
+                        <FileText className="w-5 h-5" />
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-slate-800 truncate">{selectedFile.name}</p>
+                      <p className="text-[10px] text-slate-500">
+                        {(selectedFile.size / 1024).toFixed(0)} KB • Digite uma legenda opcional ou clique em Enviar
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={clearAttachment}
+                    className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition shrink-0"
+                    title="Remover anexo"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
+              {/* ENVIAR MENSAGEM / ANEXO */}
               <div className="bg-white p-3.5 border-t border-slate-200 flex items-end gap-2.5 shrink-0">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*,.pdf,.doc,.docx"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleAttachFile(file);
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploadingMedia}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 border border-slate-200 w-10 h-10 rounded-xl flex items-center justify-center transition shrink-0"
+                  title="Anexar imagem ou documento (PDF)"
+                >
+                  <Paperclip className="w-4 h-4" />
+                </button>
                 <textarea 
                   rows={3}
                   value={inputText}
                   onChange={e => setInputText(e.target.value)}
+                  onPaste={handlePasteInTextarea}
                   onKeyDown={e => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
                       handleSendMessage();
                     }
                   }}
-                  placeholder="Digite a mensagem como Poliana... (Enter envia • Shift+Enter pula linha)" 
+                  placeholder={
+                    selectedFile
+                      ? 'Adicione uma legenda para o arquivo (opcional)...'
+                      : 'Digite a mensagem como Poliana ou cole um print (Ctrl+V)...'
+                  }
                   className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs leading-relaxed focus:outline-none focus:border-emerald-600 transition resize-none"
                 />
                 <button 
                   onClick={handleSendMessage}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white w-10 h-10 rounded-xl flex items-center justify-center transition shrink-0 shadow-xs"
-                  title="Enviar mensagem (Enter)"
+                  disabled={isUploadingMedia || (!inputText.trim() && !selectedFile)}
+                  className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white w-10 h-10 rounded-xl flex items-center justify-center transition shrink-0 shadow-xs"
+                  title="Enviar mensagem ou arquivo (Enter)"
                 >
-                  <Send className="w-4 h-4" />
+                  {isUploadingMedia ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
                 </button>
               </div>
             </>
